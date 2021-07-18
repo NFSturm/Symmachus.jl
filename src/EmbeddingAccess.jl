@@ -5,7 +5,9 @@ using Serialization: deserialize
 export get_embedding_from_string, get_word_lookup_table, load_fasttext_embeddings
 
 @doc """
-Creates a lookup table for embeddings.
+    get_word_lookup_table(embeddings_vocab::Vector{String})::Dict{String, Int64}
+
+Using the `embeddings_vocab`, each word is mapped to an index.
 """
 function get_word_lookup_table(embeddings_vocab::Vector{String})::Dict{String, Int64}
     return Dict(word=>ii for (ii,word) in enumerate(embeddings_vocab))
@@ -22,7 +24,9 @@ function get_embedding_from_string(word::String, lookup::Dict{String, Int64}, em
 end
 
 @doc """
-Loads FastText embeddings from disk.
+    load_fasttext_embeddings(data_dir::String)
+
+Loads and deserializes FastText embeddings from `data_dir`.
 """
 function load_fasttext_embeddings(data_dir::String)
     embeddings_vocab = deserialize("$(data_dir)/fasttext_pt_embeddings_vocab.jls")

@@ -1,6 +1,6 @@
 module LanguageStructs
 
-export Sentence, Document
+export Sentence, Document, Lookup
 
 struct Sentence
     lookup::Dict{Int64, String}
@@ -17,6 +17,12 @@ end
 # A simple container for the sentences in a document
 struct Document
     sentences::Vector{Sentence}
+end
+
+struct Lookup
+    word_lookup_table::Dict{String, Int64}
+    embeddings::Matrix{Float32}
+    embeddings_vocab::Vector{String}
 end
 
 end
