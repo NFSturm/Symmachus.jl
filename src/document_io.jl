@@ -3,9 +3,9 @@ using ThreadsX
 using Chain
 using Serialization: serialize
 
-include("LanguageStructs.jl")
+include("Symmachus.jl")
 
-using .LanguageStructs: Sentence, Document
+using .Symmachus
 
 # Functions for working with incoming JSONs
 function parse_json(filepath::String)
@@ -77,7 +77,7 @@ function get_doc_uuid(doc::Document)::String
 end
 
 
-ThreadsX.foreach(readdir(".data/json_data", join=true)) do f
+ThreadsX.foreach(readdir("./data/json_data", join=true)) do f
     document = transform_json(f)::Document
     uuid = get_doc_uuid(document)::String
     serialize("./data/speech_docs/$(uuid).jls", document)
