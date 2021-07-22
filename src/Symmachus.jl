@@ -24,6 +24,8 @@ export Sentence,
     get_axis_embeddings,
     embed_sentence
 
+#************ LANGUAGE STRUCTS ************
+
 struct Sentence
     lookup::Dict{Int64, String}
     dep_graph::Vector{Vector{Int64}}
@@ -47,6 +49,8 @@ struct Lookup
     embeddings_vocab::Vector{String}
 end
 
+
+#************ EMBEDDING UTILITIES ************
 
 @doc """
     get_word_lookup_table(embeddings_vocab::Vector{String})::Dict{String, Int64}
@@ -78,6 +82,8 @@ function load_fasttext_embeddings(data_dir::String)
     return embeddings_vocab, embeddings
 end
 
+#************ STRING SUBSTITUTION ************
+
 function get_nearest_word_substitute(word::String, word_lookup::Dict{String, Int64})::String
     return findnearest(word, collect(keys(word_lookup)), RatcliffObershelp())[1]
 end
@@ -89,6 +95,8 @@ function substitute_word_with_nearest_neighbour(word::String, word_lookup_table:
     end
     return substitute_word
 end
+
+#************ WORD FOCUS ************
 
 @doc """
     focus_scaler(sentence_root_index::Int64, sentence_length::Int64)::Int64
@@ -133,6 +141,8 @@ function generate_syntactic_window(token_index::Int64, sentence_length::Int64, w
     end
     return res
 end
+
+#************ SENTENCE DEPENDENCY GRAPH UTILITIES ************
 
 @doc """
     fill_dependency_matrix!(edgelist::Vector{Vector{Int64}}, zero_matrix::Matrix{Float64})
@@ -222,6 +232,60 @@ function embed_sentence(sentence::Sentence, embeddings_lookup::Lookup, window_pa
     semantic_space_walk = mean(row_word_embeddings .- column_word_embeddings)::Vector{Float32}
 
     return semantic_space_walk
+end
+
+#************ DOCUMENT CONTEXT EMBEDDINGS ************
+
+function context_embedding_window(embedded_sentences::Vector{Vector{Float32}})
+
+    context_embedding_positions = []
+
+    for sentence_pos in 1:length(embedded_sentences)
+        context_embedding_indices = @cond begin
+            sentence_pos - context_window_size >= 1 && sentence_pos + context_window_size <= sentence_length => sentence_pos - context_window_size:1:sentence_pos + context_window_size
+            sentence_pos - context_window_size < 1 && sentence_pos + context_window_size <= sentence_length => 1:1:sentence_pos + context_window_size
+            sentence_pos - context_window_size >= 1 && sentence_pos + context_window_size > sentence_length => sentence_pos - context_window_size:1:sentence_length
+        end
+        push!(context_embedding_positions, (sentence_pos, collect(context_embedding_indices)))
+    end
+
+    return context_embedding_positions
+end
+
+function calculate_context_weights(self_weight::Float64, context_size::Int64)::Float64
+    (1 - self_weight)/(context_size-1)
+end
+
+weight_position(weight_dict::Dict{String, Float64}, self_position::Int64, position::Int64) = position == self_position ? weight_dict["self"] : weight_dict["context"]
+
+function weight_embeddings(embeddings::Vector{Vector{Float32}}, weights::Vector{Float64})::Vector{Float64}
+    reduce(+, [weights[i] .* embeddings[i] for i in 1:length(embeddings)])
+end
+
+function get_weighted_context_embeddings(embedded_sentences::Vector{Vector{Float32}}, self_weight::Float64)
+
+    weighted_context_embeddings = Vector{Float64}[]
+
+    for i in 1:length(embedded_sentences)
+        self_position, positions = context_embedding_windows[i]
+        context_weights = calculate_context_weights(self_weight, length(positions))
+        weight_dict = Dict("self" => self_weight, "context" => context_weights)
+        positional_weights = weight_position.(Ref(weight_dict), Ref(self_position), positions)
+        weighted_context_embedding = weight_embeddings(embedded_sentences[positions], positional_weights)
+        push!(weighted_context_embeddings, weighted_context_embedding)
+    end
+    return weighted_context_embeddings
+end
+
+function embed_document(document::Document, context_window_size::Int64, self_weight::Float64)::Vector{Vector{Float64}}
+    sentences = Doc.sentences
+    embedded_sentences = [embed_sentence(sentence, embeddings_lookup, 4) for sentence in sentences]
+
+    sentence_length = length(sentences)
+
+    context_embedding_windows = context_embedding_window(embedded_sentences)
+
+    return get_weighted_context_embeddings(embedded_sentences, self_weight)
 end
 
 end
