@@ -3,9 +3,9 @@ using ThreadsX
 using Chain
 using Serialization: serialize
 
-include("Symmachus.jl")
+include("SymmachusCore.jl")
 
-using .Symmachus
+using .SymmachusCore
 
 # Functions for working with incoming JSONs
 function parse_json(filepath::String)
