@@ -325,7 +325,7 @@ end
     embed_document(document::Document, discourse_context_size::Int64, sentence_context_size::Int64, self_weight::Float64, embeddings_lookup::Lookup)::Vector{Vector{Float64}}
 
 This generates a **SymmachusCore** embedding. A `Document` consisting of sentences is used. `discourse_context_size`and `sentence_context_size` need to be specified. The `self_weight`refers \n
-to how much the embedding of the individual sentece should be weighted, as opposed to its neighbouring sentences. Finally, the `embeddings_lookup` refers to a lookup table for FastText embeddings.
+to how much the embedding of the individual sentence should be weighted, as opposed to its neighbouring sentences. Finally, the `embeddings_lookup` refers to a lookup table for FastText embeddings.
 """
 function embed_document(document::Document, discourse_context_size::Int64, sentence_context_size::Int64, self_weight::Float64, embeddings_lookup::Lookup)::Vector{Vector{Float64}}
     embedded_sentences = [embed_sentence(sentence, embeddings_lookup, sentence_context_size) for sentence in document.sentences]
