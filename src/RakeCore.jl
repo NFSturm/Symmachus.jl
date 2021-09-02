@@ -16,6 +16,11 @@ function tokenize_sentence(sentence::String)::Vector{String}
     lowercase.(tokenize(sentence))::Vector{String}
 end
 
+@doc """
+    make_global_lookup(tokenized_sentence::Vector{String})::Dict{Int64, String}
+
+Creates a global lookup dictionary based on the sentence position values in `tokenized_sentence`.
+"""
 function make_global_lookup(tokenized_sentence::Vector{String})::Dict{Int64, String}
     Dict(1:length(tokenized_sentence) .=> tokenized_sentence)::Dict{Int64, String}
 end
@@ -67,6 +72,11 @@ get_word_from_index(lookup::Dict{Int64, String}, ngram::NTuple{N, Int64}) where 
 
 partition_edgelist_2d(ngram::NTuple{N, Int64}) where N = combinations(ngram) |> collect |> Filter(x -> length(x) == 2) |> collect
 
+@doc """
+    fill_coocurrence_matrix!(edgelist::Vector{Vector{Int64}}, zero_matrix::Matrix{Float64})::Matrix{Float64}
+
+Fills a coocurrence matrix based on a 2D-`edgelist`.
+"""
 function fill_coocurrence_matrix!(edgelist::Vector{Vector{Int64}}, zero_matrix::Matrix{Float64})::Matrix{Float64}
     for edge in edgelist
         zero_matrix[edge...] += 1
@@ -96,6 +106,8 @@ function get_keyword_scores(candidate_score::Tuple{NTuple{N, Int64}, Float64}, w
     return words, candidate_score[2]
 end
 
+make_ngrams_from_filtered_lookup(filtered_lookup::Dict{String, Int64}, string_ngram::NTuple{N, String}) where N = getindex.(Ref(filtered_lookup), string_ngram)
+
 function rake(sentence::String, keyword_length::Int64, stopwords_path::String)::Vector{Tuple{NTuple{N, String} where N, Float64}}
     tokenized_sentence = tokenize_sentence(sentence)
     lookup = make_global_lookup(tokenized_sentence)
@@ -114,8 +126,6 @@ function rake(sentence::String, keyword_length::Int64, stopwords_path::String)::
     filtered_lookup_reverse = Dict(value => key for (key, value) in filtered_lookup)
 
     filtered_words_count = countmap(getindex.(Ref(filtered_lookup), filtered_word_strings))
-
-    make_ngrams_from_filtered_lookup(filtered_lookup::Dict{String, Int64}, string_ngram::NTuple{N, String}) where N = getindex.(Ref(filtered_lookup), string_ngram)
 
     filtered_ngrams = make_ngrams_from_filtered_lookup.(Ref(filtered_lookup), string_ngrams)
 
