@@ -143,6 +143,7 @@ function generate_syntactic_window(token_index::Int64, sentence_length::Int64, w
         token_index - window_pad >= 1 && token_index + window_pad <= sentence_length => token_index - window_pad:1:token_index + window_pad
         token_index - window_pad < 1 && token_index + window_pad <= sentence_length => 1:1:token_index + window_pad
         token_index - window_pad >= 1 && token_index + window_pad > sentence_length => token_index - window_pad:1:sentence_length
+        token_index - window_pad < 1 && token_index + window_pad > sentence_length => 1:1:sentence_length
     end
     return res
 end
@@ -213,33 +214,45 @@ This function performs the word focus embedding by using a `sentence` of type Se
 """
 function embed_sentence(sentence::Sentence, embeddings_lookup::Lookup, sentence_context_size::Int64)::Vector{Float32}
     sentence_lookup = sentence.lookup  # Deconstructing the sentence
+
+    # Matrix should be symmetric
     sent_dep_matrix = make_dependency_matrix(sentence)
 
-    subset_null = true::Bool
-    while subset_null
-        # Rows and columns from the sentence dependency matrix are sampled
-        global row_samples = sample_dependency_edges(sentence.root, sentence.doc_length, sentence_context_size)::Vector{Int64}
-        global column_samples = sample_dependency_edges(sentence.root, sentence.doc_length, sentence_context_size)::Vector{Int64}
+    function get_subset_matrix(sentence::Sentence, sentence_context_size::Int64)
+        subset_null = true::Bool
+        while subset_null
+            # Rows and columns from the sentence dependency matrix are sampled
+            row_samples = sample_dependency_edges(sentence.root, sentence.doc_length, sentence_context_size)::Vector{Int64}
 
-        global subset_matrix = sent_dep_matrix[row_samples, column_samples]::Matrix{Float64}
+            subset_matrix = sent_dep_matrix[row_samples, :]::Matrix{Float64}
 
-        if sum(subset_matrix) == 0
-            continue
-        else
-            subset_null = false::Bool
+            if sum(subset_matrix) == 0
+                continue
+            else
+                subset_null = false::Bool
+                return subset_matrix, row_samples
+            end
         end
     end
+
+    subset_matrix, row_samples = get_subset_matrix(sentence, sentence_context_size)
+
     # From the subset, only those entries are extracted that are non-null, i.e.
     syntactic_flow_indices = findall(!iszero, subset_matrix)
 
+    # Mapping inner row/column indices to those of the outer matrix
     row_mapping = Dict(1:size(subset_matrix)[1] .=> row_samples)
-    column_mapping = Dict(1:size(subset_matrix)[1] .=> column_samples)
 
     row_indices = [index[1] for index in syntactic_flow_indices]::Vector{Int64}
     column_indices = [index[2] for index in syntactic_flow_indices]::Vector{Int64}
 
     row_word_embeddings = get_axis_embeddings(row_mapping, row_indices, sentence_lookup, embeddings_lookup)
-    column_word_embeddings = get_axis_embeddings(column_mapping, column_indices, sentence_lookup, embeddings_lookup)
+
+    column_word_embeddings = @chain column_indices begin
+        getindex.(Ref(sentence_lookup), _)::Vector{String}
+        substitute_word_with_nearest_neighbour.(_, Ref(embeddings_lookup.word_lookup_table))::Vector{String}
+        get_embedding_from_string.(_, Ref(embeddings_lookup.word_lookup_table), Ref(embeddings_lookup.embeddings))::Vector{Vector{Float32}}
+    end
 
     # Columns (sentence children) are subtracted from row embeddings (heads)
     semantic_space_walk = mean([row_word_embeddings[i] - column_word_embeddings[i] for i in 1:length(row_word_embeddings)])::Vector{Float32}
