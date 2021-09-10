@@ -15,7 +15,9 @@ function parse_json(filepath::String)
 end
 
 
-"""
+@doc """
+    keys_to_int(dictionary)::Dict{Int64, String}
+
 This functions turns dictionary keys into integers
 """
 function keys_to_int(dictionary)::Dict{Int64, String}
@@ -24,16 +26,12 @@ function keys_to_int(dictionary)::Dict{Int64, String}
     Dict(keys .=> values)
 end
 
-
-"""
-A simple helver function to convert a specific structure to Dict
-"""
-function convert_to_dict(sentence)::Dict
-    return convert(Dict, sentence)
-end
+convert_to_dict(sentence) = convert(Dict, sentence)
 
 
-"""
+@doc """
+    document_traversal(discourse_documents)::Array{Dict}
+
 This function traverses a JSON array and converts the elements to Dict
 """
 function document_traversal(discourse_documents)::Array{Dict}
@@ -68,7 +66,9 @@ function transform_json(file_path::String)::Document
     return Document(sentences)
 end
 
-"""
+@doc """
+    get_doc_uuid(doc::Document)::String
+
 This functions extracts the document UUID from a sentence. The document
 UUID is uniform across all sentences of a given document.
 """
