@@ -10,7 +10,7 @@ using Transducers
 using Combinatorics
 using Revise
 
-export rake
+export rake, read_stopwords
 
 function tokenize_sentence(sentence::String)::Vector{String}
     lowercase.(tokenize(sentence))::Vector{String}
@@ -108,15 +108,14 @@ end
 
 make_ngrams_from_filtered_lookup(filtered_lookup::Dict{String, Int64}, string_ngram::NTuple{N, String}) where N = getindex.(Ref(filtered_lookup), string_ngram)
 
-function rake(sentence::String, keyword_length::Int64, stopwords_path::String)::Vector{Tuple{NTuple{N, String} where N, Float64}}
+function rake(sentence::String, keyword_length::Int64, stopwords::Vector{String})::Vector{Tuple{NTuple{N, String} where N, Float64}}
     tokenized_sentence = tokenize_sentence(sentence)
     lookup = make_global_lookup(tokenized_sentence)
-    stopwords = read_stopwords(stopwords_path)
     words_encoded = encode_words(tokenized_sentence)
 
     filtered_words = stopword_or_word.(words_encoded, Ref(stopwords), Ref(lookup)) |> Filter(x -> !isnothing(x)) |> collect
     ngrams = make_ngrams(filtered_words, keyword_length)
-    close_ngrams = get_close_ngrams.(ngrams, 2) |> Filter(x -> !isnothing(x)) |> collect
+    close_ngrams = get_close_ngrams.(ngrams, keyword_length + 1) |> Filter(x -> !isnothing(x)) |> collect
 
     string_ngrams = get_word_from_index.(Ref(lookup), close_ngrams)
 
