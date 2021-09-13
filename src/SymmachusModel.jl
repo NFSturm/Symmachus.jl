@@ -1,39 +1,51 @@
 # Self-Training
 
-include("LabelingUtils.jl")
-include("SymmachusCore.jl")
-
 using XGBoost
 using DataFrames
-using FLoops
 using Parameters
-using ThreadsX
 using Serialization
 using Chain
 using Random
+using Distributed
 
-using .LabelingUtils
-using .SymmachusCore
+addprocs(5)
 
-embeddings_vocab, embeddings = load_fasttext_embeddings("./data/embeddings")
+@everywhere begin
+	using Pkg; Pkg.activate(".")
 
-const word_lookup_table = get_word_lookup_table(embeddings_vocab)
-
-global embeddings_lookup = Lookup(word_lookup_table, embeddings, embeddings_vocab)
-
-@with_kw mutable struct ModelArgs
-	max_discourse_context_size::Int64
-	max_sentence_context_size::Int64
-	self_weight::Number
+	using XGBoost
+	using DataFrames
+	using Parameters
+	using Serialization
+	using Chain
+	using Random
+	using Distributed
 end
 
-model_args = ModelArgs(
+@everywhere include("SymmachusCore.jl")
+@everywhere using .SymmachusCore
+
+@everywhere begin
+	embeddings_vocab, embeddings = load_fasttext_embeddings("./data/embeddings")
+
+	const word_lookup_table = get_word_lookup_table(embeddings_vocab)
+
+	global embeddings_lookup = Lookup(word_lookup_table, embeddings, embeddings_vocab)
+
+	@with_kw mutable struct ModelArgs
+		max_discourse_context_size::Int64
+		max_sentence_context_size::Int64
+		self_weight::Number
+	end
+end
+
+@everywhere global symmachus_args = ModelArgs(
 	max_discourse_context_size=3,
 	max_sentence_context_size=3,
 	self_weight=0.8
 )
 
-@doc """
+@everywhere @doc """
     make_dataframe_row(sentence::Sentence, embedded_sentence::Vector{Float64})
 
 Creates a DataFrame row by unpacking a Sentence.
@@ -44,14 +56,13 @@ function make_dataframe_row(sentence, embedded_sentence::Vector{Float64})
 end
 
 
-@doc """
-    doc_to_sent(embeddings_lookup::Lookup, args)
+@everywhere @doc """
+    doc_to_sent(file::String)
 
 Using the `embeddings_lookup`, document files are read from the directory and \n
 and embedded. The output is a dataframe containing the individual sentences. \n
-`Args` defines a parameter struct.
 """
-function doc_to_sent(file::String, embeddings_lookup::Lookup, args)
+function doc_to_sent(file::String)
 
     embedded_dataframe = DataFrame(
         doc_uuid = String[],
@@ -66,9 +77,9 @@ function doc_to_sent(file::String, embeddings_lookup::Lookup, args)
 
     # Unpacking the arguments
 
-    @unpack max_discourse_context_size, max_sentence_context_size, self_weight = args
+    @unpack max_discourse_context, max_sentence_context, self_weight = args
 
-    emb_doc = embed_document(doc, max_discourse_context_size, max_sentence_context_size, self_weight, embeddings_lookup)
+    emb_doc = embed_document(doc, max_discourse_context, max_sentence_context, self_weight, embeddings_lookup)
 
     sentences = doc.sentences
     dataframe_rows = make_dataframe_row.(sentences, emb_doc)
@@ -80,7 +91,7 @@ function doc_to_sent(file::String, embeddings_lookup::Lookup, args)
     return embedded_dataframe
 end
 
-label_data = read_label_data("./data/labels/labels.csv")
+label_data = DataFrame(CSV.File("./data/labels/labels.csv"))
 
 files = readdir("./data/speech_docs")
 
@@ -99,7 +110,7 @@ function make_deserialization_paths(items::Vector{String})
 
 	paths = String[]
 
-	ThreadsX.foreach(items) do item
+	foreach(items) do item
 		path_name = make_path_to_speech_docs(item)
 		push!(paths, path_name)
 	end
@@ -110,29 +121,29 @@ end
 
 deserialization_paths = make_deserialization_paths(deserialization_items)
 
+
 @doc """
     make_document_dataframe(paths::Vector{String}, model_args)
 
 Deserializes documents and embeds the documents contained in `paths`. \n
 These documents are then split into sentences and appended to a dataframe. \n
-Parameters of the **SymmachusModel** can be specified by `model_args`.
+Parameters of the *SymmachusModel* can be specified by `model_args`.
 """
-function make_document_dataframe(paths::Vector{String}, model_args)
-
-	sentences_data = DataFrame[]
-
-	@unpack max_discourse_context_size, max_sentence_context_size, self_weight = model_args
-
-	ThreadsX.foreach(paths) do path
-		sentences = doc_to_sent(path, embeddings_lookup, model_args)
-		push!(sentences_data, sentences)
-	end
-
-	vcat(sentences_data..., cols=:union)
-
+function make_document_dataframe(paths::Vector{String})
+    res = pmap(doc_to_sent, paths)
 end
 
-document_dataframe = make_document_dataframe(deserialization_paths, model_args)
+
+@doc """
+    concat_dataframes(dataframes::Vector{DataFrame})::DataFrame
+
+A simple function wrapper around `vcat`.
+"""
+function concat_dataframes(dataframes::Vector{DataFrame})::DataFrame
+    vcat(dataframes..., cols=:union)
+end
+
+document_dataframe = make_document_dataframe(deserialization_paths, model_args) |> concat_dataframes
 
 sentence_label_data  = innerjoin(label_data, document_dataframe, on=[:doc_uuid, :sentence_id], makeunique=true)
 
@@ -194,3 +205,31 @@ function train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector
 	nfold_cv(feature_data, boosting_args.num_rounds, boosting_args.nfold, label = label_data, param = param, metrics = boosting_args.metrics)
 
 end
+
+
+@doc """
+    sample_documents(all_documents_path::String, labelled_documents::Vector{String})::Vector{String}
+
+Samples documents from a directory. Returns a vector of strings.
+"""
+function sample_documents(all_documents_path::String, labelled_sentences::Vector{String})::Vector{String}
+	all_documents = readdir(all_documents_path)
+	all_documents_id = first.(split.(all_documents, Ref('.')))
+
+	uuid_labels = labelled_sentences[!, :doc_uuid] |> Set |> collect
+
+	# Do an anti-join with existing labels after deserialization
+
+end
+
+
+
+all_documents = readdir("./data/speech_docs")
+
+all_documents_id = first.(split.(documents, Ref('.')))
+
+labels = labelled_sentences[!, :doc_uuid]
+
+labelled_sentences[!, :doc_uuid] |> Set |> collect
+
+docu

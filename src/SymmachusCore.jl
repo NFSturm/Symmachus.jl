@@ -89,6 +89,12 @@ end
 
 #************ STRING SUBSTITUTION ************
 
+@doc """
+    get_nearest_word_substitute(word::String, word_lookup::Dict{String, Int64})::String
+
+Using the RatcliffObershelp string similarity algorithm, the nearest string \n
+for a given `word` is returned.
+"""
 function get_nearest_word_substitute(word::String, word_lookup::Dict{String, Int64})::String
     return findnearest(word, collect(keys(word_lookup)), RatcliffObershelp())[1]
 end
