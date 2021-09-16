@@ -165,8 +165,9 @@ deserialization_paths = make_deserialization_paths(deserialization_items)
 Deserializes documents and embeds the documents contained in `paths`. \n
 These documents are then split into sentences and appended to a dataframe.
 """
-function make_document_dataframe(paths::Vector{String}, symmachus_args::SymmachusArgs)
-	res = pmap((paths, symmachus_args) -> doc_to_sent(paths, symmachus_args), paths, symmachus_args)
+function make_document_dataframe(paths::Vector{String}, args::SymmachusArgs)
+	symmachus_args = args
+	res = pmap(doc_to_sent, paths)
 end
 
 @doc """
@@ -198,12 +199,12 @@ function sample_documents(all_documents_path::String, labelled_sentences::Vector
 
 	existing_labels = labelled_sentences[!, :doc_uuid] |> Set |> collect
 
-	document_samples = sample(all_documents_id, 200)
+	document_samples = sample(all_documents_id, num_documents)
 
 	# Sample only those documents that have not yet been labelled.
 	zips = zip(document_samples, document_samples .∈ Ref(existing_labels)) |> collect
 
-	[zip[1] for zip in zips if !zip[2]]
+	[first(zip) for zip in zips if !last(zip)]
 end
 
 
