@@ -9,6 +9,7 @@ using Distributed
 using CSV
 using DataFrames
 using StatsBase
+using Revise
 
 addprocs(5)
 
@@ -24,6 +25,7 @@ addprocs(5)
 	using CSV
 	using DataFrames
 	using StatsBase
+	using Revise
 end
 
 @everywhere include("SymmachusCore.jl")
@@ -46,15 +48,9 @@ end
 	end
 end
 
-@everywhere symmachus_args = SymmachusArgs(
-	max_discourse_context_size=3,
-	max_sentence_context_size=3,
-	self_weight=0.8
-)
-
 @everywhere grid = Dict(:max_discourse_context_size => 1:5, :max_sentence_context_size => 1:5, :self_weight => 0.5:0.1:0.9, :grid_size => 10)
 
-@everywhere symmachus_args = [SymmachusArgs(
+@everywhere symmachus_args_array = [SymmachusArgs(
 	max_discourse_context_size = sample(grid[:max_discourse_context_size], 1) |> first,
 	max_sentence_context_size = sample(grid[:max_sentence_context_size], 1) |> first,
 	self_weight = sample(grid[:self_weight], 1) |> first
@@ -84,7 +80,6 @@ boosting_args = BoostingArgs(
 
 @everywhere @doc """
     make_dataframe_row(sentence::Sentence, embedded_sentence::Vector{Float64})
-
 Creates a DataFrame row by unpacking a Sentence.
 """
 function make_dataframe_row(sentence, embedded_sentence::Vector{Float64})
@@ -94,8 +89,7 @@ end
 
 
 @everywhere @doc """
-    doc_to_sent(file::String, symmachus_args:SymmachusArgs)
-
+    doc_to_sent(file::String, symmachus_args::SymmachusArgs)
 Using the `embeddings_lookup`, document files are read from the directory and \n
 and embedded. The output is a dataframe containing the individual sentences. \n
 """
@@ -141,7 +135,6 @@ make_path_to_speech_docs(doc_name::String) = "./data/speech_docs/" * doc_name * 
 
 @doc """
     make_deserialization_paths(items::Vector{String})
-
 Create deserialization paths for documents.
 """
 function make_deserialization_paths(items::Vector{String})
@@ -161,32 +154,29 @@ deserialization_paths = make_deserialization_paths(deserialization_items)
 
 @doc """
     make_document_dataframe(paths::Vector{String}, symmachus_args::SymmachusArgs)
-
 Deserializes documents and embeds the documents contained in `paths`. \n
 These documents are then split into sentences and appended to a dataframe.
 """
 function make_document_dataframe(paths::Vector{String}, args::SymmachusArgs)
-	symmachus_args = args
-	res = pmap(doc_to_sent, paths)
+	res = pmap((p, arg) -> doc_to_sent(p, arg), paths, Iterators.repeated(args, length(paths)) |> collect)
 end
 
 @doc """
     concat_dataframes(dataframes::Vector{DataFrame})::DataFrame
-
 A simple function wrapper around `vcat`.
 """
 function concat_dataframes(dataframes::Vector{DataFrame})::DataFrame
     vcat(dataframes..., cols=:union)
 end
 
-document_dataframe = [make_document_dataframe(deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args]
+
+document_dataframe = [make_document_dataframe(deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args_array]
 
 sentence_label_data  = innerjoin(labelled_sentences, document_dataframe, on=[:doc_uuid, :sentence_id], makeunique=true)
 
 
 @doc """
     sample_documents(all_documents_path::String, labelled_documents::Vector{String}, num_documents::Int64)::Vector{String}
-
 Samples documents from a directory. Returns a vector of strings.
 """
 function sample_documents(all_documents_path::String, labelled_sentences::Vector{String}, num_documents::Int64)::Vector{String}
@@ -210,7 +200,6 @@ end
 
 @doc """
     train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
-
 Trains a boosting classifier.
 """
 function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
@@ -220,7 +209,6 @@ end
 
 @doc """
     predict_booster(booster::Booster, test_data)
-
 Predict using a `booster` object.
 """
 function predict_booster(booster::Booster, test_data)
@@ -230,7 +218,6 @@ end
 
 @doc """
     boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
-
 Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
 specified using `boosting_args`.
 """
