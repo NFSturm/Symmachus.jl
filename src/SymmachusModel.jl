@@ -9,6 +9,7 @@ using Distributed
 using CSV
 using DataFrames
 using StatsBase
+using UUIDs
 using Revise
 
 addprocs(5)
@@ -25,6 +26,7 @@ addprocs(5)
 	using CSV
 	using DataFrames
 	using StatsBase
+	using UUIDs
 	using Revise
 end
 
@@ -78,7 +80,7 @@ boosting_args = BoostingArgs(
 	train_prop=0.8
 )
 
-@doc """
+@everywhere @doc """
     make_dataframe_row(sentence::Sentence, embedded_sentence::Vector{Float64})
 Creates a DataFrame row by unpacking a Sentence.
 """
@@ -208,15 +210,27 @@ function sample_documents(all_documents_path::String, labelled_sentences::DataFr
 	[first(zip) for zip in zips if !last(zip)]
 end
 
-document_samples = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
+new_deserialization_paths = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
 
-@doc """
-    train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
-Trains a boosting classifier.
-"""
-function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
-	xgboost(feature_data, boosting_args.num_rounds, label=label_data, param = boosting_args.params, metrics = boosting_args.metrics)
+new_document_dataframes = [make_document_dataframe(new_deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args_array]
+
+function broadcast_labels(model::Booster, broadcast_targets::DataFrame)::DataFrame
+	features = broadcast_targets[!, :sentence_embedding]
+	feature_labels = predict_booster(model, features)
+	broadcast_targets[!, :labels] = feature_labels
+
+	feature_labels_sorted_rev = sort(broadcast_targets, by=:labels, rev=true)
+	feature_labels_sorted = sort(broadcast_targets, by=:labels)
+
+	confident_predictions_rev = feature_labels_sorted_rev[1:20]
+	confident_predictions = feature_labels_sorted[1:20]
+
+	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
+
+	transform(confident_predictions_all, [:labels] .=> ByRow(x -> round(x)) .=> [:labels])
+
 end
+
 
 @doc """
     train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
@@ -229,7 +243,7 @@ end
 
 @doc """
     predict_booster(booster::Booster, test_data)
-Predict using a `booster` object.
+Predict using a `Booster` object.
 """
 function predict_booster(booster::Booster, test_data)
 	convert(Vector{Float64}, predict(booster, test_data))
@@ -241,37 +255,11 @@ end
 Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
 specified using `boosting_args`.
 """
-function boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
+function boost(sentence_label_data::DataFrame, boosting_args::BoostingArgs)
 	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
 	bst = train_booster(X_train, y_train, boosting_args)
 	predictions = predict_booster(bst, X_test)
-	confmat = confusion_matrix(predictions, y_test, 0.5)
+	confmat = confusion_matrix(predictions, y_test, boosting_args.true_threshold)
 	f1_model_score = f1_score(confmat)
 
-	return Dict(:f1_score => f1_model_score, :model_args => boosting_args)
-
-end
-@doc """
-    predict_booster(booster::Booster, test_data)
-Predict using a `booster` object.
-"""
-function predict_booster(booster::Booster, test_data)
-	convert(Vector{Float64}, predict(booster, test_data))
-end
-
-
-@doc """
-    boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
-Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
-specified using `boosting_args`.
-"""
-function boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
-	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
-	bst = train_booster(X_train, y_train, boosting_args)
-	predictions = predict_booster(bst, X_test)
-	confmat = confusion_matrix(predictions, y_test, 0.5)
-	f1_model_score = f1_score(confmat)
-
-	return Dict(:f1_score => f1_model_score, :model_args => boosting_args)
-
-end
+	return Dict(:model_id => uuid4() |> string, :f1_score => f1_model_score, :model => bst, :model_args => boosting_args)
