@@ -78,7 +78,7 @@ boosting_args = BoostingArgs(
 	train_prop=0.8
 )
 
-@everywhere @doc """
+@doc """
     make_dataframe_row(sentence::Sentence, embedded_sentence::Vector{Float64})
 Creates a DataFrame row by unpacking a Sentence.
 """
@@ -155,7 +155,8 @@ deserialization_paths = make_deserialization_paths(deserialization_items)
 @doc """
     make_document_dataframe(paths::Vector{String}, symmachus_args::SymmachusArgs)
 Deserializes documents and embeds the documents contained in `paths`. \n
-These documents are then split into sentences and appended to a dataframe.
+These documents are then split into sentences and appended to a dataframe. \n
+Arguments for the *Symmachus* embedding can be specified using `args`.
 """
 function make_document_dataframe(paths::Vector{String}, args::SymmachusArgs)
 	res = pmap((p, arg) -> doc_to_sent(p, arg), paths, Iterators.repeated(args, length(paths)) |> collect)
@@ -172,14 +173,24 @@ end
 
 document_dataframe = [make_document_dataframe(deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args_array]
 
-sentence_label_data  = innerjoin(labelled_sentences, document_dataframe, on=[:doc_uuid, :sentence_id], makeunique=true)
+@doc """
+    get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
+
+Extracts those sentences from embedded `documents` that are in `labelled_sentences` \n
+by performing an inner join.
+"""
+function get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
+	innerjoin(labelled_sentences, document, on=[:doc_uuid, :sentence_id], makeunique=true)
+end
+
+sentence_label_data = get_labelled_sentences_from_documents.(document_dataframe, Ref(labelled_sentences))
 
 
 @doc """
     sample_documents(all_documents_path::String, labelled_documents::Vector{String}, num_documents::Int64)::Vector{String}
 Samples documents from a directory. Returns a vector of strings.
 """
-function sample_documents(all_documents_path::String, labelled_sentences::Vector{String}, num_documents::Int64)::Vector{String}
+function sample_documents(all_documents_path::String, labelled_sentences::DataFrame, num_documents::Int64)::Vector{String}
 	all_documents = readdir(all_documents_path)
 	all_documents_id = first.(split.(all_documents, Ref('.')))
 
@@ -197,6 +208,15 @@ function sample_documents(all_documents_path::String, labelled_sentences::Vector
 	[first(zip) for zip in zips if !last(zip)]
 end
 
+document_samples = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
+
+@doc """
+    train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
+Trains a boosting classifier.
+"""
+function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
+	xgboost(feature_data, boosting_args.num_rounds, label=label_data, param = boosting_args.params, metrics = boosting_args.metrics)
+end
 
 @doc """
     train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
@@ -207,6 +227,30 @@ function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64},
 end
 
 
+@doc """
+    predict_booster(booster::Booster, test_data)
+Predict using a `booster` object.
+"""
+function predict_booster(booster::Booster, test_data)
+	convert(Vector{Float64}, predict(booster, test_data))
+end
+
+
+@doc """
+    boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
+Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
+specified using `boosting_args`.
+"""
+function boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
+	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
+	bst = train_booster(X_train, y_train, boosting_args)
+	predictions = predict_booster(bst, X_test)
+	confmat = confusion_matrix(predictions, y_test, 0.5)
+	f1_model_score = f1_score(confmat)
+
+	return Dict(:f1_score => f1_model_score, :model_args => boosting_args)
+
+end
 @doc """
     predict_booster(booster::Booster, test_data)
 Predict using a `booster` object.
