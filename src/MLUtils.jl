@@ -4,10 +4,11 @@ using StatsBase
 using UnPack
 using MLStyle.Modules.Cond
 using DataFrames
+using Random
 
 export confusion_matrix, precision, recall, f1_score, make_train_test_data
 
-round_prediction(pred::Vector{Float64}, threshold::Float64) = pred > threshold ? 1 : 0
+round_prediction(pred::Float64, threshold::Float64) = pred > threshold ? 1 : 0
 
 
 @doc """
@@ -33,7 +34,7 @@ the `true_labels` as well as the `true_threshold`, above which predictions are \
 classified as positive for binary classification.
 """
 function confusion_matrix(predictions::Vector{Float64}, true_labels::Vector{Int64}, true_threshold::Float64)::Matrix{Int64}
-	pred_labels = round_prediction.(predictions, true_threshold)
+	pred_labels = round_prediction.(predictions, Ref(true_threshold))
 	confusion_base = eval_obs.(pred_labels, true_labels) |> countmap
 
 	# Unpacking the confusion matrix elements
