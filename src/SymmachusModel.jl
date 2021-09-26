@@ -1,6 +1,10 @@
 # Self-Training
 
 using XGBoost
+using XGBoost: predict as apply_booster
+
+using ThreadsX
+
 using Parameters
 using Serialization
 using Chain
@@ -18,6 +22,10 @@ addprocs(5)
 	using Pkg; Pkg.activate(".")
 
 	using XGBoost
+	using XGBoost: predict as apply_booster
+
+	using ThreadsX
+
 	using Parameters
 	using Serialization
 	using Chain
@@ -90,12 +98,28 @@ function make_dataframe_row(sentence, embedded_sentence::Vector{Float64})
 end
 
 
+@doc """
+    retrieve_documents(paths::Vector{String})
+
+Retrieves documents of type *Document* from `paths`.
+"""
+function retrieve_documents(paths::Vector{String})
+
+	documents = Document[]
+
+	docs = ThreadsX.foreach(paths) do p
+		doc = deserialize(p)
+		push!(documents, doc)
+	end
+	return documents
+end
+
 @everywhere @doc """
-    doc_to_sent(file::String, symmachus_args::SymmachusArgs)
+    doc_to_sent(doc::Document, symmachus_args::SymmachusArgs)
 Using the `embeddings_lookup`, document files are read from the directory and \n
 and embedded. The output is a dataframe containing the individual sentences. \n
 """
-function doc_to_sent(file::String, symmachus_args::SymmachusArgs)
+function doc_to_sent(doc::Document, symmachus_args::SymmachusArgs)
 
     embedded_dataframe = DataFrame(
         doc_uuid = String[],
@@ -105,8 +129,6 @@ function doc_to_sent(file::String, symmachus_args::SymmachusArgs)
         discourse_time = String[],
         sentence_embedding = Vector{Float64}[]
     )
-
-    doc = deserialize(file)
 
     # Unpacking the arguments
 
@@ -130,7 +152,7 @@ files = readdir("./data/speech_docs")
 
 deserialization_items = collect(Set(label_data[!, :doc_uuid])) # Retrieves only unique docs
 
-labelled_sentences = label_data[!, [:doc_uuid, :sentence_id]]
+labelled_sentences = label_data[!, [:doc_uuid, :sentence_id, :label]]
 
 make_path_to_speech_docs(doc_name::String) = "./data/speech_docs/" * doc_name * ".jls"
 
@@ -154,14 +176,16 @@ end
 
 deserialization_paths = make_deserialization_paths(deserialization_items)
 
+documents = retrieve_documents(deserialization_paths)
+
 @doc """
-    make_document_dataframe(paths::Vector{String}, symmachus_args::SymmachusArgs)
+    make_document_dataframe(paths::Vector{Document}, symmachus_args::SymmachusArgs)
 Deserializes documents and embeds the documents contained in `paths`. \n
 These documents are then split into sentences and appended to a dataframe. \n
 Arguments for the *Symmachus* embedding can be specified using `args`.
 """
-function make_document_dataframe(paths::Vector{String}, args::SymmachusArgs)
-	res = pmap((p, arg) -> doc_to_sent(p, arg), paths, Iterators.repeated(args, length(paths)) |> collect)
+function make_document_dataframe(docs::Vector{Document}, args::SymmachusArgs)
+	res = pmap((d, arg) -> doc_to_sent(d, arg), docs, Iterators.repeated(args, length(docs)) |> collect)
 end
 
 @doc """
@@ -173,19 +197,65 @@ function concat_dataframes(dataframes::Vector{DataFrame})::DataFrame
 end
 
 
-document_dataframe = [make_document_dataframe(deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args_array]
+document_dataframe = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
+
+serialize("./cache/document_dataframe.jls", document_dataframe)
 
 @doc """
-    get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
+    get_labelled_sentences_from_documents(document::Tuple{DataFrame, SymmachusArgs}, labelled_sentences::DataFrame)::DataFrame
 
 Extracts those sentences from embedded `documents` that are in `labelled_sentences` \n
 by performing an inner join.
 """
-function get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
-	innerjoin(labelled_sentences, document, on=[:doc_uuid, :sentence_id], makeunique=true)
+function get_labelled_sentences_from_documents(document::Tuple{DataFrame, SymmachusArgs}, labelled_sentences::DataFrame)::Tuple{DataFrame, SymmachusArgs}
+	document_embedded, symmachus_args = document
+	labelled_sentences = innerjoin(labelled_sentences, document_embedded, on=[:doc_uuid, :sentence_id], makeunique=true)
+	return labelled_sentences, symmachus_args
 end
 
 sentence_label_data = get_labelled_sentences_from_documents.(document_dataframe, Ref(labelled_sentences))
+
+
+@doc """
+    train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
+Trains a boosting classifier.
+"""
+function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
+	booster = xgboost(feature_data, boosting_args.num_rounds, label=label_data, param = boosting_args.params, metrics = boosting_args.metrics)
+	return booster
+end
+
+@doc """
+    predict_booster(booster::Booster, test_data)
+Predict using a `Booster` object.
+"""
+function predict_booster(booster::Booster, test_data)
+	convert(Vector{Float64}, apply_booster(booster, test_data))
+end
+
+
+@doc """
+    boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args::BoostingArgs)
+Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
+specified using `boosting_args`.
+"""
+function boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args::BoostingArgs)
+	sentence_label_data, symmachus_args = sentence_label_data
+	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
+	bst = train_booster(X_train, y_train, boosting_args)
+	predictions = predict_booster(bst, X_test)
+	confmat = confusion_matrix(predictions, y_test, boosting_args.true_threshold)
+	f1_model_score = f1_score(confmat)
+
+	return Dict(
+		:model_id => uuid4() |> string,
+		:f1_score => f1_model_score,
+		:model => bst,
+		:model_args => boosting_args,
+		:symmachus_args => symmachus_args,
+		:predictions => predictions
+	)
+end
 
 
 @doc """
@@ -212,6 +282,8 @@ end
 
 new_deserialization_paths = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
 
+new_documents = retrieve_documents(new_deserialization_paths)
+
 new_document_dataframes = [make_document_dataframe(new_deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args_array]
 
 function broadcast_labels(model::Booster, broadcast_targets::DataFrame)::DataFrame
@@ -230,36 +302,3 @@ function broadcast_labels(model::Booster, broadcast_targets::DataFrame)::DataFra
 	transform(confident_predictions_all, [:labels] .=> ByRow(x -> round(x)) .=> [:labels])
 
 end
-
-
-@doc """
-    train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
-Trains a boosting classifier.
-"""
-function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
-	xgboost(feature_data, boosting_args.num_rounds, label=label_data, param = boosting_args.params, metrics = boosting_args.metrics)
-end
-
-
-@doc """
-    predict_booster(booster::Booster, test_data)
-Predict using a `Booster` object.
-"""
-function predict_booster(booster::Booster, test_data)
-	convert(Vector{Float64}, predict(booster, test_data))
-end
-
-
-@doc """
-    boost(feature_data::Matrix{Float64}, label_data::Vector{Int64}, boosting_args::BoostingArgs)
-Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
-specified using `boosting_args`.
-"""
-function boost(sentence_label_data::DataFrame, boosting_args::BoostingArgs)
-	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
-	bst = train_booster(X_train, y_train, boosting_args)
-	predictions = predict_booster(bst, X_test)
-	confmat = confusion_matrix(predictions, y_test, boosting_args.true_threshold)
-	f1_model_score = f1_score(confmat)
-
-	return Dict(:model_id => uuid4() |> string, :f1_score => f1_model_score, :model => bst, :model_args => boosting_args)
