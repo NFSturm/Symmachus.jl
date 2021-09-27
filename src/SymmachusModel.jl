@@ -14,6 +14,7 @@ using CSV
 using DataFrames
 using StatsBase
 using UUIDs
+using Suppressor
 using Revise
 
 addprocs(5)
@@ -35,6 +36,7 @@ addprocs(5)
 	using DataFrames
 	using StatsBase
 	using UUIDs
+	using Suppressor
 	using Revise
 end
 
@@ -58,7 +60,7 @@ end
 	end
 end
 
-@everywhere grid = Dict(:max_discourse_context_size => 1:5, :max_sentence_context_size => 1:5, :self_weight => 0.5:0.1:0.9, :grid_size => 10)
+@everywhere grid = Dict(:max_discourse_context_size => 1:10, :max_sentence_context_size => 1:10, :self_weight => 0.5:0.1:0.9, :grid_size => 10)
 
 @everywhere symmachus_args_array = [SymmachusArgs(
 	max_discourse_context_size = sample(grid[:max_discourse_context_size], 1) |> first,
@@ -67,7 +69,7 @@ end
 ) for i in 1:grid[:grid_size]]
 
 
-@with_kw mutable struct BoostingArgs
+@everywhere @with_kw mutable struct BoostingArgs
 	num_rounds::Int64 # Number of rounds for training the booster
 	metrics::Vector{String} # The metric to be chosen
 	params::Vector{Pair{String, Any}} # Model parameters
@@ -75,18 +77,24 @@ end
 	train_prop::Float64 # Proportion of observations to be used for training
 end
 
+@everywhere boosting_grid = Dict(
+	:num_rounds => 50:15:165,
+	:params => ["max_depth" => 2:5, "eta" => 0.1:0.1:1],
+	:true_threshold => 0.5:0.05:0.7,
+	:grid_size => 10)
 
-boosting_args = BoostingArgs(
-	num_rounds=150,
+@everywhere boosting_args_array = [BoostingArgs(
+	num_rounds = sample(boosting_grid[:num_rounds], 1) |> first,
 	metrics=["aucpr"],
-	params= [
-		"max_depth" => 2,
-		"eta" => 1,
-		"objective" => "binary:logistic"
+	params = [
+	"max_depth" => sample(boosting_grid[:params][1][2], 1) |> first |> Int,
+	"eta" => sample(boosting_grid[:params][2][2], 1) |> first,
+	"objective" => "binary:logistic"
 	],
-	true_threshold=0.5,
-	train_prop=0.8
-)
+	true_threshold = sample(boosting_grid[:true_threshold], 1) |> first,
+	train_prop = 0.8
+) for i in 1:boosting_grid[:grid_size]]
+
 
 @everywhere @doc """
     make_dataframe_row(sentence::Sentence, embedded_sentence::Vector{Float64})
@@ -146,16 +154,6 @@ function doc_to_sent(doc::Document, symmachus_args::SymmachusArgs)
     return embedded_dataframe
 end
 
-label_data = DataFrame(CSV.File("./data/labels/labels.csv"))
-
-files = readdir("./data/speech_docs")
-
-deserialization_items = collect(Set(label_data[!, :doc_uuid])) # Retrieves only unique docs
-
-labelled_sentences = label_data[!, [:doc_uuid, :sentence_id, :label]]
-
-make_path_to_speech_docs(doc_name::String) = "./data/speech_docs/" * doc_name * ".jls"
-
 
 @doc """
     make_deserialization_paths(items::Vector{String})
@@ -174,9 +172,7 @@ function make_deserialization_paths(items::Vector{String})
 
 end
 
-deserialization_paths = make_deserialization_paths(deserialization_items)
-
-documents = retrieve_documents(deserialization_paths)
+make_path_to_speech_docs(doc_name::String) = "./data/speech_docs/" * doc_name * ".jls"
 
 @doc """
     make_document_dataframe(paths::Vector{Document}, symmachus_args::SymmachusArgs)
@@ -196,10 +192,7 @@ function concat_dataframes(dataframes::Vector{DataFrame})::DataFrame
     vcat(dataframes..., cols=:union)
 end
 
-
-document_dataframe = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
-
-serialize("./cache/document_dataframe.jls", document_dataframe)
+#@everywhere sentence_label_data = deserialize("./cache/sentence_label_data.jls")
 
 @doc """
     get_labelled_sentences_from_documents(document::Tuple{DataFrame, SymmachusArgs}, labelled_sentences::DataFrame)::DataFrame
@@ -213,10 +206,8 @@ function get_labelled_sentences_from_documents(document::Tuple{DataFrame, Symmac
 	return labelled_sentences, symmachus_args
 end
 
-sentence_label_data = get_labelled_sentences_from_documents.(document_dataframe, Ref(labelled_sentences))
 
-
-@doc """
+@everywhere @doc """
     train_booster(feature_data::Vector{Vector{Float64}}, label_data::Vector{Int64}}, boosting_args::BoostingArgs)
 Trains a boosting classifier.
 """
@@ -225,7 +216,7 @@ function train_booster(feature_data::Matrix{Float64}, label_data::Vector{Int64},
 	return booster
 end
 
-@doc """
+@everywhere @doc """
     predict_booster(booster::Booster, test_data)
 Predict using a `Booster` object.
 """
@@ -234,27 +225,64 @@ function predict_booster(booster::Booster, test_data)
 end
 
 
-@doc """
-    boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args::BoostingArgs)
+@everywhere @doc """
+    boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args_array::Vector{BoostingArgs})
 Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
 specified using `boosting_args`.
 """
-function boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args::BoostingArgs)
+function boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args_array::Vector{BoostingArgs})
 	sentence_label_data, symmachus_args = sentence_label_data
-	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
-	bst = train_booster(X_train, y_train, boosting_args)
-	predictions = predict_booster(bst, X_test)
-	confmat = confusion_matrix(predictions, y_test, boosting_args.true_threshold)
-	f1_model_score = f1_score(confmat)
+	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args_array[1].train_prop)
 
-	return Dict(
-		:model_id => uuid4() |> string,
-		:f1_score => f1_model_score,
-		:model => bst,
-		:model_args => boosting_args,
-		:symmachus_args => symmachus_args,
-		:predictions => predictions
-	)
+	model_uuid = uuid4() |> string
+
+	boosters = []
+
+	for arg in boosting_args_array
+
+		@suppress begin
+			bst = train_booster(X_train, y_train, arg)
+			predictions = predict_booster(bst, X_test)
+			confmat = confusion_matrix(predictions, y_test, arg.true_threshold)
+			f1_model_score = f1_score(confmat)
+			push!(boosters, Dict(
+				:model_id => model_uuid,
+				:f1_score => f1_model_score,
+				:model_args => arg,
+				:symmachus_args => symmachus_args,
+				:data => sentence_label_data
+				)
+			)
+		end
+	end
+
+	@chain boosters begin
+		sort(_, by=x -> x[:f1_score], rev=true)
+		first
+	end
+end
+
+
+@doc """
+    boost_sentence_data(sentence_label_data::Vector{DataFrame}, args::Vector{BoostingArgs})
+
+Trains an XGBoost model in parallel on `sentence_label_data` and `args`, which \n
+are the boosting args.
+"""
+function boost_sentence_data(sentence_label_data::Vector{Tuple{DataFrame, SymmachusArgs}}, args::Vector{BoostingArgs})
+	res = pmap((s, arg) -> boost(s, arg), sentence_label_data, Iterators.repeated(args, length(sentence_label_data)) |> collect)
+end
+
+@doc """
+    select_best_model(symmachus_boost_models::Vector{Dict{Symbol, Any}}, scoring_metric::String)
+
+Selects the best model with specifications based on the `scoring_metric` used.
+"""
+function select_best_model(symmachus_boost_models::Vector{Dict{Symbol, Any}}, scoring_metric::String)
+	@chain symmachus_boost_models begin
+		sort(_, by=x -> x[:f1_score], rev=true)
+		first
+	end
 end
 
 
@@ -263,7 +291,7 @@ end
 Samples documents from a directory. Returns a vector of strings.
 """
 function sample_documents(all_documents_path::String, labelled_sentences::DataFrame, num_documents::Int64)::Vector{String}
-	all_documents = readdir(all_documents_path)
+	all_documents = readdir(all_documents_path) # The path to the documents
 	all_documents_id = first.(split.(all_documents, Ref('.')))
 
 	uuid_labels = labelled_sentences[!, :doc_uuid] |> Set |> collect
@@ -280,25 +308,83 @@ function sample_documents(all_documents_path::String, labelled_sentences::DataFr
 	[first(zip) for zip in zips if !last(zip)]
 end
 
-new_deserialization_paths = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
 
-new_documents = retrieve_documents(new_deserialization_paths)
+@doc """
+    broadcast_labels(best_model::Dict{Symbol, Any}, broadcast_targets::DataFrame)::DataFrame
 
-new_document_dataframes = [make_document_dataframe(new_deserialization_paths, symmachus_arg) |> concat_dataframes for symmachus_arg in symmachus_args_array]
+Using the specifications of `best_model`, the labels are broadcast to `broadcast_targets`, \n
+which are the datapoints that are newly sampled.
+"""
+function broadcast_labels(best_model::Dict{Symbol, Any}, broadcast_targets::DataFrame)::DataFrame
 
-function broadcast_labels(model::Booster, broadcast_targets::DataFrame)::DataFrame
 	features = broadcast_targets[!, :sentence_embedding]
-	feature_labels = predict_booster(model, features)
-	broadcast_targets[!, :labels] = feature_labels
+	feature_matrix = convert(Array{Float64}, transpose(hcat(features...)))
 
-	feature_labels_sorted_rev = sort(broadcast_targets, by=:labels, rev=true)
-	feature_labels_sorted = sort(broadcast_targets, by=:labels)
+	train_feature_matrix = convert(Array{Float64}, transpose(hcat(best_model[:data][!, :sentence_embedding]...)))
+	train_labels = convert(Array{Int64}, best_model[:data][!, :label])
 
-	confident_predictions_rev = feature_labels_sorted_rev[1:20]
-	confident_predictions = feature_labels_sorted[1:20]
+	@suppress begin
+		bst = train_booster(train_feature_matrix, train_labels, best_model[:model_args])
+		feature_labels = predict_booster(bst, feature_matrix)
+		broadcast_targets[!, :label] = feature_labels
+	end
+
+	feature_labels_sorted_rev = sort(broadcast_targets, :label, rev=true)
+	feature_labels_sorted = sort(broadcast_targets, :label)
+
+	confident_predictions_rev = feature_labels_sorted_rev[1:20, :]
+	confident_predictions = feature_labels_sorted[1:20, :]
 
 	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
 
-	transform(confident_predictions_all, [:labels] .=> ByRow(x -> round(x)) .=> [:labels])
+	transform(confident_predictions_all, [:label] .=> ByRow(x -> round(x) |> Int) .=> [:label])
+
+end
+
+
+function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs})
+
+	# Read labelled data from disk
+	label_data = DataFrame(CSV.File("./data/labels/labels.csv"))
+
+	# Read unlabelled file names from disk
+	files = readdir("./data/speech_docs")
+
+	deserialization_items = collect(Set(label_data[!, :doc_uuid])) # Retrieves only unique docs
+
+	labelled_sentences = label_data[!, [:doc_uuid, :sentence_id, :label]]
+
+	deserialization_paths = make_deserialization_paths(deserialization_items)
+
+	documents = retrieve_documents(deserialization_paths)
+
+	# START ITERATION HERE
+
+	# Create a separate embedding for each argument in symmachus_args_array
+	sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
+
+	#serialize("./cache/sentence_label_data.jls", sentence_label_dataframes)
+
+	sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframes, Ref(labelled_sentences))
+
+	# Create the best boosting model for each dataframe
+	symmachus_boost_models = boost_sentence_data(sentence_label_data, boosting_args_array)
+
+	best_model = select_best_model(symmachus_boost_models, "f1_score")
+
+	model_specs = []
+
+	push!(model_specs, Dict(:symmachus_args => best_model[:symmachus_args], :boosting_args => best_model[:model_args], :performance => best_model[:f1_score]))
+
+	new_deserialization_paths = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
+
+	new_documents = retrieve_documents(new_deserialization_paths)
+
+	new_document_dataframe = make_document_dataframe(
+		new_documents, model_specs[end][:symmachus_args]) |> concat_dataframes
+
+	new_sentences = broadcast_labels(best_model, new_document_dataframe)
+
+	new_data_union = concat_dataframes([best_model[:data], new_sentences])
 
 end
