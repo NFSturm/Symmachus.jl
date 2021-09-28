@@ -403,6 +403,10 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		@info "Dataframe was updated. Current length: $(nrow(new_data_union))"
 	end
+
+	# Returning the final labelled data as well as the model training history
+	return last(label_data_container), model_specs_container
+
 end
 
-train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, num_iter=10)
+labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, num_iter=10)
