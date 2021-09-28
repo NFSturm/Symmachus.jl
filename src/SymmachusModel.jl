@@ -332,8 +332,8 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, broadcast_targets::Data
 	feature_labels_sorted_rev = sort(broadcast_targets, :label, rev=true)
 	feature_labels_sorted = sort(broadcast_targets, :label)
 
-	confident_predictions_rev = feature_labels_sorted_rev[1:20, :]
-	confident_predictions = feature_labels_sorted[1:20, :]
+	confident_predictions_rev = feature_labels_sorted_rev[1:50, :]
+	confident_predictions = feature_labels_sorted[1:50, :]
 
 	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
 
@@ -342,49 +342,64 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, broadcast_targets::Data
 end
 
 
-function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs})
+function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64)
 
 	# Read labelled data from disk
-	label_data = DataFrame(CSV.File("./data/labels/labels.csv"))
+	seed_label_data = DataFrame(CSV.File(labelled_data_path))
 
 	# Read unlabelled file names from disk
-	files = readdir("./data/speech_docs")
+	const files = readdir(unlabelled_data_path)
 
-	deserialization_items = collect(Set(label_data[!, :doc_uuid])) # Retrieves only unique docs
+	# Label data container
+	label_data_container = DataFrame[]
+	push!(label_data_container, seed_label_data)
 
-	labelled_sentences = label_data[!, [:doc_uuid, :sentence_id, :label]]
+	# Container for best model specifications
+	model_specs_container = Dict[]
 
-	deserialization_paths = make_deserialization_paths(deserialization_items)
+	for iter in iter_num
 
-	documents = retrieve_documents(deserialization_paths)
+		label_data = last(label_data_container)
 
-	# START ITERATION HERE
+		deserialization_items = collect(Set(label_data[!, :doc_uuid])) # Retrieves only unique docs
 
-	# Create a separate embedding for each argument in symmachus_args_array
-	sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
+		deserialization_paths = make_deserialization_paths(deserialization_items)
 
-	#serialize("./cache/sentence_label_data.jls", sentence_label_dataframes)
+		documents = retrieve_documents(deserialization_paths)
 
-	sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframes, Ref(labelled_sentences))
+		# Create a separate embedding for each argument in symmachus_args_array
+		sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
 
-	# Create the best boosting model for each dataframe
-	symmachus_boost_models = boost_sentence_data(sentence_label_data, boosting_args_array)
+		#serialize("./cache/sentence_label_data.jls", sentence_label_dataframes)
 
-	best_model = select_best_model(symmachus_boost_models, "f1_score")
+		sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframes, Ref(label_data))
 
-	model_specs = []
+		# Create the best boosting model for each dataframe
+		symmachus_boost_models = boost_sentence_data(sentence_label_data, boosting_args_array)
 
-	push!(model_specs, Dict(:symmachus_args => best_model[:symmachus_args], :boosting_args => best_model[:model_args], :performance => best_model[:f1_score]))
+		best_model = select_best_model(symmachus_boost_models, "f1_score")
 
-	new_deserialization_paths = sample_documents("./data/speech_docs", labelled_sentences, 50) |> make_deserialization_paths
+		# Updating the model spec container
+		push!(model_specs_container, Dict(:symmachus_args => best_model[:symmachus_args], :boosting_args => best_model[:model_args], :performance => best_model[:f1_score]))
 
-	new_documents = retrieve_documents(new_deserialization_paths)
+		@info "Current iteration performs at: $(best_model[:f1_score])"
 
-	new_document_dataframe = make_document_dataframe(
-		new_documents, model_specs[end][:symmachus_args]) |> concat_dataframes
+		new_deserialization_paths = sample_documents(unlabelled_data_path, label_data, 50) |> make_deserialization_paths
 
-	new_sentences = broadcast_labels(best_model, new_document_dataframe)
+		new_documents = retrieve_documents(new_deserialization_paths)
 
-	new_data_union = concat_dataframes([best_model[:data], new_sentences])
+		new_document_dataframe = make_document_dataframe(
+			new_documents, last(model_specs_container)[:symmachus_args]) |> concat_dataframes
 
+		new_sentences = broadcast_labels(best_model, new_document_dataframe)
+
+		new_data_union = concat_dataframes([best_model[:data], new_sentences])
+
+		# Updating the data container
+		push!(label_data_container, new_data_union)
+
+		@info "Dataframe was updated. Current length: $(nrow(new_data_union))"
+	end
 end
+
+train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, num_iter=10)
