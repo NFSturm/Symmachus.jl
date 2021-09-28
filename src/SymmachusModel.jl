@@ -357,7 +357,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 	# Container for best model specifications
 	model_specs_container = Dict[]
 
-	for iter in iter_num
+	for iter in 1:iter_num
 
 		label_data = last(label_data_container)
 
@@ -394,6 +394,9 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 		new_sentences = broadcast_labels(best_model, new_document_dataframe)
 
 		new_data_union = concat_dataframes([best_model[:data], new_sentences])
+
+		# Removing the cached label DataFrame
+		deleteat!(label_data_container, 1)
 
 		# Updating the data container
 		push!(label_data_container, new_data_union)
