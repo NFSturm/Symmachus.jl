@@ -17,6 +17,7 @@ using DataFrames
 using StatsBase
 using UUIDs
 using Suppressor
+using Pipe
 using Revise
 
 addprocs(5)
@@ -39,6 +40,7 @@ addprocs(5)
 	using StatsBase
 	using UUIDs
 	using Suppressor
+	using Pipe
 	using Revise
 end
 
@@ -338,8 +340,8 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 	feature_labels_sorted_rev = sort(broadcast_targets, :label, rev=true)
 	feature_labels_sorted = sort(broadcast_targets, :label)
 
-	confident_predictions_rev = feature_labels_sorted_rev[1:50, :]
-	confident_predictions = feature_labels_sorted[1:50, :]
+	confident_predictions_rev = feature_labels_sorted_rev[1:75, :]
+	confident_predictions = feature_labels_sorted[1:75, :]
 
 	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
 
@@ -349,14 +351,35 @@ end
 
 
 @doc """
-    train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64)
+    cache_model(label_data::DataFrame, model_specs::Dict{Symbol, Any}, cache_path::String)
+
+Caches a model characterized by `label_data` and `model_specs`.
+"""
+function cache_model(label_data::DataFrame, model_specs::Dict{Symbol, Any}, cache_path::String)
+	# Creating cache info
+	cache_info_date = @pipe today() |> string |> replace(_, "-" => "")
+	cache_info_time = @pipe now() |> Time(_) |> string |> replace(_, ":" => "") |> split(_, ".") |> first
+
+	cache_info = join([cache_info_date, cache_info_time], "_")
+
+	@info "Cacheing label data"
+	serialize(joinpath(cache_path, "label_data_" * cache_info * ".jls"), label_data)
+
+	@info "Cacheing model specifications"
+	serialize(joinpath(cache_path, "model_specs_" * cache_info * ".jls"), model_specs)
+end
+
+
+
+@doc """
+    train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String)
 
 Initiates the self-training loop of an XGBoost model to label a set of initial binary labels, \n
 contained in `labelled_data_path`. Gradually, new samples are drawn from `unlabelled_data_path`. \n
 Hyperparameters for this model can be specified using `symmachus_args_array` for the sentence embedding model \n
 and `boosting_args_array` for XGBoost params.
 """
-function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64)
+function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String)
 
 	# Read labelled data from disk
 	seed_label_data = DataFrame(CSV.File(labelled_data_path))
@@ -416,6 +439,11 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 		push!(label_data_container, new_data_union)
 
 		@info "Dataframe was updated. Current length: $(nrow(new_data_union))"
+
+		if iter % 5 == 0
+			cache_model(new_data_union, best_model, cache_path)
+		end
+
 	end
 
 	# Returning the final labelled data as well as the model training history
@@ -423,4 +451,4 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 end
 
-@time labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 1)
+labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 1, "./cache")
