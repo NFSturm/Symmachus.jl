@@ -4,6 +4,7 @@ using Pkg; Pkg.activate(".")
 
 using XGBoost
 using XGBoost: predict as apply_booster
+using MLStyle.Modules.Cond
 
 using ThreadsX
 
@@ -27,6 +28,8 @@ addprocs(5)
 
 	using XGBoost
 	using XGBoost: predict as apply_booster
+
+	using MLStyle.Modules.Cond
 
 	using ThreadsX
 
@@ -372,6 +375,42 @@ end
 
 
 @doc """
+    sample_mutants(seed_argument::SymmachusArgs, sentence_context_spectrum::Int64, discourse_context_spectrum::Int64, self_weight_spectrum::Float64)::Vector{SymmachusArgs}
+
+Using a `seed_argument`, a vector of new *SymmachusArgs* is generated. The mutation can be tuned used `sentence_context_spectrum`, \n
+`discourse_context_spectrum` and `self_weight_spectrum`. Returns the array of mutated *SymmachusArgs*.
+"""
+function sample_mutants(seed_argument::SymmachusArgs, sentence_context_spectrum::Int64, discourse_context_spectrum::Int64, self_weight_spectrum::Float64)::Vector{SymmachusArgs}
+    @unpack max_discourse_context_size, max_sentence_context_size, self_weight = seed_argument
+
+    mutant_grid = Dict(
+                    :max_discourse_context_size => (max_discourse_context_size-discourse_context_spectrum):(max_discourse_context_size+discourse_context_spectrum),
+                    :max_sentence_context_size => (max_sentence_context_size-sentence_context_spectrum):(max_sentence_context_size+sentence_context_spectrum),
+                    :self_weight => (self_weight-self_weight_spectrum):0.05:(self_weight+self_weight_spectrum),
+                    :grid_size => 10
+    )
+
+    function validate_argument(arg::Float64)
+        res = @cond begin
+            arg > 1 => 1
+            arg < 0 => 0
+            _ => arg
+        end
+    end
+
+    validate_argument(arg::Int64) = arg < 0 ? 0 : arg
+
+    symmachus_mutant_array = [SymmachusArgs(
+        max_discourse_context_size = sample(mutant_grid[:max_discourse_context_size], 1) |> first |> validate_argument,
+        max_sentence_context_size = sample(mutant_grid[:max_sentence_context_size], 1) |> first |> validate_argument,
+        self_weight = sample(mutant_grid[:self_weight], 1) |> first |> validate_argument
+    ) for i in 1:mutant_grid[:grid_size]]
+
+    symmachus_mutant_array
+end
+
+
+@doc """
     train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String)
 
 Initiates the self-training loop of an XGBoost model to label a set of initial binary labels, \n
@@ -404,10 +443,16 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		documents = retrieve_documents(deserialization_paths)
 
-		# Create a separate embedding for each argument in symmachus_args_array
-		sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
+		if iter > 1 # For each iteration after the first one, the random mutation applies
+			mutated_symmachus_args_array = sample_mutants(last(model_specs_container[:symmachus_args]), 2, 3, 0.2) # Can be parameterized
 
-		#serialize("./cache/sentence_label_data.jls", sentence_label_dataframes)
+			# Create a separate embedding for each argument in symmachus_args_array
+			sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in mutated_symmachus_args_array]
+
+		else # Only for first iteration to generate a seed struct
+			# Create a separate embedding for each argument in symmachus_args_array
+			sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in symmachus_args_array]
+		end
 
 		sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframes, Ref(label_data))
 
@@ -447,7 +492,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 	end
 
 	# Returning the final labelled data as well as the model training history
-	return last(label_data_container), last(model_specs_container)
+	last(label_data_container), model_specs_container
 
 end
 
