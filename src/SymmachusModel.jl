@@ -104,6 +104,11 @@ end
 		train_prop = 0.8
 	) for i in 1:boosting_grid[:grid_size]]
 
+	@with_kw mutable struct GeneticArgs
+	    sentence_context_spectrum::Int64 = 2
+	    discourse_context_spectrum::Int64 = 3
+	    self_weight_spectrum::Float64 = 0.2
+	end
 end
 
 @everywhere @doc """
@@ -373,15 +378,16 @@ function cache_model(label_data::DataFrame, model_specs::Dict{Symbol, Any}, cach
 end
 
 
-
 @doc """
-    sample_mutants(seed_argument::SymmachusArgs, sentence_context_spectrum::Int64, discourse_context_spectrum::Int64, self_weight_spectrum::Float64)::Vector{SymmachusArgs}
+    sample_mutants(seed_argument::SymmachusArgs, genetic_args::GeneticArgs)::Vector{SymmachusArgs}
 
 Using a `seed_argument`, a vector of new *SymmachusArgs* is generated. The mutation can be tuned used `sentence_context_spectrum`, \n
 `discourse_context_spectrum` and `self_weight_spectrum`. Returns the array of mutated *SymmachusArgs*.
 """
-function sample_mutants(seed_argument::SymmachusArgs, sentence_context_spectrum::Int64, discourse_context_spectrum::Int64, self_weight_spectrum::Float64)::Vector{SymmachusArgs}
+function sample_mutants(seed_argument::SymmachusArgs, genetic_args::GeneticArgs)::Vector{SymmachusArgs}
+
     @unpack max_discourse_context_size, max_sentence_context_size, self_weight = seed_argument
+    @unpack sentence_context_spectrum, discourse_context_spectrum, self_weight_spectrum = genetic_args
 
     mutant_grid = Dict(
                     :max_discourse_context_size => (max_discourse_context_size-discourse_context_spectrum):(max_discourse_context_size+discourse_context_spectrum),
@@ -411,14 +417,14 @@ end
 
 
 @doc """
-    train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String)
+    train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String, genetic_args::GeneticArgs)
 
 Initiates the self-training loop of an XGBoost model to label a set of initial binary labels, \n
 contained in `labelled_data_path`. Gradually, new samples are drawn from `unlabelled_data_path`. \n
 Hyperparameters for this model can be specified using `symmachus_args_array` for the sentence embedding model \n
 and `boosting_args_array` for XGBoost params.
 """
-function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String)
+function train_self(labelled_data_path::String, unlabelled_data_path::String, symmachus_args_array::Vector{SymmachusArgs}, boosting_args_array::Vector{BoostingArgs}, iter_num::Int64, cache_path::String, genetic_args::GeneticArgs)
 
 	# Read labelled data from disk
 	seed_label_data = DataFrame(CSV.File(labelled_data_path))
@@ -444,7 +450,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 		documents = retrieve_documents(deserialization_paths)
 
 		if iter > 1 # For each iteration after the first one, the random mutation applies
-			mutated_symmachus_args_array = sample_mutants(last(model_specs_container[:symmachus_args]), 2, 3, 0.2) # Can be parameterized
+			mutated_symmachus_args_array = sample_mutants(last(model_specs_container)[:symmachus_args], genetic_args)
 
 			# Create a separate embedding for each argument in symmachus_args_array
 			sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in mutated_symmachus_args_array]
@@ -485,7 +491,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		@info "Dataframe was updated. Current length: $(nrow(new_data_union))"
 
-		if iter % 5 == 0
+		if iter % 4 == 0 # Every fourth iteration, the model and specs are cached
 			cache_model(new_data_union, best_model, cache_path)
 		end
 
@@ -496,4 +502,4 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 end
 
-labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 1, "./cache")
+labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 1, "./cache", GeneticArgs())

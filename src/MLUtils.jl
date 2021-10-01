@@ -88,7 +88,7 @@ function make_train_test_data(all_data::DataFrame, feature_column::String, label
 	split_index = Int(floor(data_length * train_prop))
 
 	train_indices = indices[1:split_index]
-	test_indices = indices[split_index:end]
+	test_indices = indices[split_index+1:end]
 
 	X_train, y_train = convert(Array{Float64}, transpose(hcat(all_features[train_indices]...))), convert(Array{Int64}, all_labels[train_indices])
 	X_test, y_test = convert(Array{Float64}, transpose(hcat(all_features[test_indices]...))), convert(Array{Int64}, all_labels[test_indices])
