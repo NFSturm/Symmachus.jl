@@ -20,6 +20,7 @@ using UUIDs
 using Suppressor
 using Pipe
 using Revise
+using Dates
 
 addprocs(5)
 
@@ -45,6 +46,7 @@ addprocs(5)
 	using Suppressor
 	using Pipe
 	using Revise
+	using Dates
 end
 
 @everywhere include("SymmachusCore.jl")
@@ -67,7 +69,7 @@ end
 	end
 
 	# Initializing the Symmachus model grid
-	grid = Dict(:max_discourse_context_size => 1:10, :max_sentence_context_size => 1:15, :self_weight => 0.5:0.05:0.9, :grid_size => 10)
+	grid = Dict(:max_discourse_context_size => 1:10, :max_sentence_context_size => 1:15, :self_weight => 0.5:0.05:0.9, :grid_size => 9)
 
 	symmachus_args_array = [SymmachusArgs(
 		max_discourse_context_size = sample(grid[:max_discourse_context_size], 1) |> first,
@@ -94,14 +96,14 @@ end
 
 	boosting_args_array = [BoostingArgs(
 		num_rounds = sample(boosting_grid[:num_rounds], 1) |> first,
-		metrics=["aucpr"],
+		metrics=["aucpr"], # aucpr is the area under the precision-recall-curve
 		params = [
 		"max_depth" => sample(boosting_grid[:params][1][2], 1) |> first |> Int,
 		"eta" => sample(boosting_grid[:params][2][2], 1) |> first,
 		"objective" => "binary:logistic"
 		],
-		true_threshold = sample(boosting_grid[:true_threshold], 1) |> first,
-		train_prop = 0.8
+		true_threshold = sample(boosting_grid[:true_threshold], 1) |> first, # This threshold is the point when observations will be classified as "1" and "0", respectively
+		train_prop = 0.8 # The proportion of data used for training
 	) for i in 1:boosting_grid[:grid_size]]
 
 	@with_kw mutable struct GeneticArgs
@@ -111,13 +113,21 @@ end
 	end
 end
 
+
 @everywhere @doc """
-    make_dataframe_row(sentence::Sentence, embedded_sentence::Vector{Float64})
-Creates a DataFrame row by unpacking a Sentence.
+    make_dataframe_rows(sentences::Vector{Sentence}, embedded_sentences::Vector{Vector{Float64}})
+
+Creates DataFrame rows by unpacking `sentences` and appending `embedded_sentences` one by one.
 """
-function make_dataframe_row(sentence, embedded_sentence::Vector{Float64})
-    @unpack doc_uuid, sentence_id, sentence_text, actor_name, discourse_time = sentence
-    return doc_uuid, sentence_id, sentence_text, actor_name, discourse_time, embedded_sentence
+function make_dataframe_rows(sentences::Vector{Sentence}, embedded_sentences::Vector{Vector{Float64}})
+
+	rows = []
+
+	for index in eachindex(sentences)
+		@unpack doc_uuid, sentence_id, sentence_text, actor_name, discourse_time = sentences[index]
+		push!(rows, [doc_uuid, sentence_id, sentence_text, actor_name, discourse_time, embedded_sentences[index]])
+	end
+    rows
 end
 
 
@@ -159,8 +169,7 @@ function doc_to_sent(doc::Document, symmachus_args::SymmachusArgs)
 
     emb_doc = embed_document(doc, max_discourse_context_size, max_sentence_context_size, self_weight, embeddings_lookup)
 
-    sentences = doc.sentences
-    dataframe_rows = make_dataframe_row.(sentences, emb_doc)
+	dataframe_rows = make_dataframe_rows(doc.sentences, emb_doc)
 
     for row in dataframe_rows
         push!(embedded_dataframe, row)
@@ -190,13 +199,16 @@ end
 make_path_to_speech_docs(doc_name::String) = "./data/speech_docs/" * doc_name * ".jls"
 
 @doc """
-    make_document_dataframe(paths::Vector{Document}, symmachus_args::SymmachusArgs)
+    make_document_dataframe(docs::Vector{Document}, args::SymmachusArgs)
+
 Deserializes documents and embeds the documents contained in `paths`. \n
 These documents are then split into sentences and appended to a dataframe. \n
 Arguments for the *Symmachus* embedding can be specified using `args`.
 """
 function make_document_dataframe(docs::Vector{Document}, args::SymmachusArgs)
 	res = pmap((d, arg) -> doc_to_sent(d, arg), docs, Iterators.repeated(args, length(docs)) |> collect)
+	@info "Embedded document DataFrame – $(now())"
+	res
 end
 
 @doc """
@@ -287,6 +299,8 @@ are the boosting args.
 """
 function boost_sentence_data(sentence_label_data::Vector{Tuple{DataFrame, SymmachusArgs}}, args::Vector{BoostingArgs})
 	res = pmap((s, arg) -> boost(s, arg), sentence_label_data, Iterators.repeated(args, length(sentence_label_data)) |> collect)
+	@info "Booster Models trained. Passing to model selector… – $(now())"
+	res
 end
 
 @doc """
@@ -353,8 +367,9 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 
 	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
 
-	transform(confident_predictions_all, [:label] .=> ByRow(x -> round(x) |> Int) .=> [:label])
-
+	transform!(confident_predictions_all, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob]) # We annotate the label to check the certainty of the model
+	transform!(confident_predictions_all, [:label] .=> ByRow(x -> round(x) |> Int) .=> [:label])
+	return confident_predictions_all
 end
 
 
@@ -428,6 +443,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 	# Read labelled data from disk
 	seed_label_data = DataFrame(CSV.File(labelled_data_path))
+	transform!(seed_label_data, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob])
 
 	# Read unlabelled file names from disk
 	files = readdir(unlabelled_data_path)
@@ -438,6 +454,8 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 	# Container for best model specifications
 	model_specs_container = Dict[]
+
+	@info "Starting embedding-modelling cycle – $(now())"
 
 	for iter in 1:iter_num
 
@@ -451,6 +469,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		if iter > 1 # For each iteration after the first one, the random mutation applies
 			mutated_symmachus_args_array = sample_mutants(last(model_specs_container)[:symmachus_args], genetic_args)
+			push!(mutated_symmachus_args_array, last(model_specs_container)[:symmachus_args]) # Adding the parent as well
 
 			# Create a separate embedding for each argument in symmachus_args_array
 			sentence_label_dataframes = [(make_document_dataframe(documents, symmachus_arg) |> concat_dataframes, symmachus_arg) for symmachus_arg in mutated_symmachus_args_array]
@@ -502,4 +521,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 end
 
-labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 1, "./cache", GeneticArgs())
+labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 4, "./cache", GeneticArgs())
+
+serialize("./cache/final_model/labelled_data_final.jls", labelled_data_final)
+serialize("./cache/final_model/model_history.jls", model_history)
