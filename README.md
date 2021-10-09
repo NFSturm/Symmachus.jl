@@ -8,7 +8,7 @@
 
 📄 Symmachus is a semi-supervised Machine Learning system. The idea is to use a small, but expressive dataset containing phrases containing political convictions and normative statements from the Portuguese parliament and gradually building a bigger dataset, which can then be used for analysis. 
 
-💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for the discourse aspect and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx). The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
+💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for the discourse aspect and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities. The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
 
 ⌨️ There are several components to this repository:
 
