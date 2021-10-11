@@ -5,15 +5,15 @@ using IterTools
 using WordTokenizers: tokenize
 using MLStyle.Modules.Cond
 using Chain
-using DataStructures
 using Transducers
 using Combinatorics
+using Pipe
 using Revise
 
-export rake, read_stopwords
+export rake, rake_wrapper, read_stopwords
 
 function tokenize_sentence(sentence::String)::Vector{String}
-    lowercase.(tokenize(sentence))::Vector{String}
+    lowercase.(tokenize(sentence))
 end
 
 @doc """
@@ -48,7 +48,7 @@ function stopword_or_word(word_position::Int64, stopwords::Vector{String}, globa
 end
 
 function make_ngrams(words::Vector{Int64}, ngram_size::Int64)::Vector{NTuple{ngram_size, Int64}}
-    collect(partition(words, ngram_size))
+    collect(partition(words, ngram_size, 1))
 end
 
 function get_close_ngrams(ngram::NTuple{N, Int64}, max_distance::Int64)::Union{Nothing, NTuple{N, Int64}} where N
@@ -141,6 +141,19 @@ function rake(sentence::String, keyword_length::Int64, stopwords::Vector{String}
     scored_keywords = get_keyword_scores.(candidate_scores, Ref(filtered_lookup_reverse))
 
     return scored_keywords
+end
+
+@doc """
+    rake_wrapper(text::String, keyword_length::Int64, stopwords::Vector{String})
+
+A wrapper around *rake* to handle exceptions.
+"""
+function rake_wrapper(text::String, keyword_length::Int64, stopwords::Vector{String})
+    try
+        rake(text, keyword_length, stopwords)
+    catch
+        []
+    end
 end
 
 end
