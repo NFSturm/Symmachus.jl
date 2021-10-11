@@ -22,7 +22,7 @@ using Pipe
 using Revise
 using Dates
 
-addprocs(5)
+addprocs(6)
 
 @everywhere begin
 	using Pkg; Pkg.activate(".")
@@ -91,7 +91,7 @@ end
 		:num_rounds => 50:15:165,
 		:params => ["max_depth" => 2:5, "eta" => 0.1:0.1:1],
 		:true_threshold => 0.5:0.05:0.7,
-		:grid_size => 10
+		:grid_size => 8
 	)
 
 	boosting_args_array = [BoostingArgs(
@@ -369,6 +369,7 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 
 	transform!(confident_predictions_all, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob]) # We annotate the label to check the certainty of the model
 	transform!(confident_predictions_all, [:label] .=> ByRow(x -> round(x) |> Int) .=> [:label])
+	select!(confident_predictions_all, Not(r"_\d+|sentence_embedding")) # Removing duplicate columns
 	return confident_predictions_all
 end
 
@@ -408,7 +409,7 @@ function sample_mutants(seed_argument::SymmachusArgs, genetic_args::GeneticArgs)
                     :max_discourse_context_size => (max_discourse_context_size-discourse_context_spectrum):(max_discourse_context_size+discourse_context_spectrum),
                     :max_sentence_context_size => (max_sentence_context_size-sentence_context_spectrum):(max_sentence_context_size+sentence_context_spectrum),
                     :self_weight => (self_weight-self_weight_spectrum):0.05:(self_weight+self_weight_spectrum),
-                    :grid_size => 10
+                    :grid_size => 7
     )
 
     function validate_argument(arg::Float64)
@@ -455,9 +456,9 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 	# Container for best model specifications
 	model_specs_container = Dict[]
 
-	@info "Starting embedding-modelling cycle – $(now())"
-
 	for iter in 1:iter_num
+
+		@info "Starting embedding-modelling cycle in iteration $(iter) – $(now())"
 
 		label_data = last(label_data_container)
 
@@ -510,7 +511,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		@info "Dataframe was updated. Current length: $(nrow(new_data_union))"
 
-		if iter % 4 == 0 # Every fourth iteration, the model and specs are cached
+		if iter % 3 == 0 # Every third iteration, the model and specs are cached
 			cache_model(new_data_union, best_model, cache_path)
 		end
 
@@ -521,7 +522,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 end
 
-labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 4, "./cache", GeneticArgs())
+labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 3, "./cache", GeneticArgs())
 
 serialize("./cache/final_model/labelled_data_final.jls", labelled_data_final)
 serialize("./cache/final_model/model_history.jls", model_history)
