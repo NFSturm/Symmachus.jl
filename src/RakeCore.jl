@@ -8,7 +8,6 @@ using Chain
 using Transducers
 using Combinatorics
 using Pipe
-using Revise
 
 export rake, rake_wrapper, read_stopwords
 
