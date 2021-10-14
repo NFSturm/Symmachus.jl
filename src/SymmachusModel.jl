@@ -370,8 +370,13 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 	feature_labels_sorted_rev = sort(broadcast_targets, :label, rev=true)
 	feature_labels_sorted = sort(broadcast_targets, :label)
 
-	confident_predictions_rev = feature_labels_sorted_rev[1:100, :]
-	confident_predictions = feature_labels_sorted[1:100, :]
+	if nrow(feature_labels_sorted) > 200
+		confident_predictions_rev = feature_labels_sorted_rev[1:100, :]
+		confident_predictions = feature_labels_sorted[1:100, :]
+	else
+		confident_predictions_rev = feature_labels_sorted_rev[1:end, :]
+		confident_predictions = feature_labels_sorted[1:end, :]
+	end
 
 	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
 
