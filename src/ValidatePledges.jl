@@ -43,15 +43,6 @@ function read_labelled_data(data_file::String)::DataFrame
     labelled_data = DataFrame(CSV.File(data_file))
 end
 
-@doc """
-    parse_date_column(data::DataFrame, date_column::String)::DataFrame
-
-Parses `date_column` in `data`. Data is expected to follow "y-m-d" convention.
-"""
-function parse_date_column(data::DataFrame, date_column::String)::DataFrame
-    transform(data, Symbol(date_column) => ByRow(x -> Date(x, "y-m-d")) => Symbol(date_column))
-end
-
 labelled_data = @pipe read_labelled_data("./cache/temp_cache/label_data_test.csv")
 
 transform!(labelled_data, :sentence_text => ByRow(x -> replace(x, r"\d{1,2}\s*DE\s*[A-Z]{4,9}\s*DE\s*\d{4}" => s"")) => :sentence_text)
@@ -113,6 +104,7 @@ function validate_pledges(name::String, labelled_data::DataFrame, deputy_activit
 
         keyword_vectors = []
 
+        # This loops over all rows of deputy activity and generates keywords
         foreach(activity_subset[!, :text]) do t
             keywords2 = @pipe rake_wrapper(t, 2, stopwords) .|> _[1]
             keywords3 = @pipe rake_wrapper(t, 3, stopwords) .|> _[1]
@@ -121,6 +113,9 @@ function validate_pledges(name::String, labelled_data::DataFrame, deputy_activit
 
         keyword_matches = []
 
+        #= For each row (i.e. each implicit pledge), the keywords for that row
+        are compared with the ones generated from an individual activity.
+        =#
         foreach(keyword_vectors) do kw
             kw_intersection = intersect(keywords_discourse, kw)
             push!(keyword_matches, kw_intersection)
