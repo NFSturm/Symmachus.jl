@@ -1,2 +1,2 @@
 using Pkg
-Pkg.instantiate(".")
+Pkg.instantiate()
