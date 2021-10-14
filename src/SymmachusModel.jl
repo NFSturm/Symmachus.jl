@@ -69,7 +69,7 @@ end
 	end
 
 	# Initializing the Symmachus model grid
-	grid = Dict(:max_discourse_context_size => 1:10, :max_sentence_context_size => 1:15, :self_weight => 0.5:0.05:0.9, :grid_size => 9)
+	grid = Dict(:max_discourse_context_size => 1:10, :max_sentence_context_size => 1:15, :self_weight => 0.5:0.05:0.9, :grid_size => 10)
 
 	symmachus_args_array = [SymmachusArgs(
 		max_discourse_context_size = sample(grid[:max_discourse_context_size], 1) |> first,
@@ -90,9 +90,10 @@ end
 	boosting_grid = Dict(
 		:num_rounds => 50:15:165,
 		:params => ["max_depth" => 2:5, "eta" => 0.1:0.1:1],
-		:true_threshold => 0.5:0.05:0.7,
+		:true_threshold => 0.5:0.05:0.8,
 		:grid_size => 8
 	)
+
 
 	boosting_args_array = [BoostingArgs(
 		num_rounds = sample(boosting_grid[:num_rounds], 1) |> first,
@@ -105,6 +106,7 @@ end
 		true_threshold = sample(boosting_grid[:true_threshold], 1) |> first, # This threshold is the point when observations will be classified as "1" and "0", respectively
 		train_prop = 0.8 # The proportion of data used for training
 	) for i in 1:boosting_grid[:grid_size]]
+
 
 	@with_kw mutable struct GeneticArgs
 	    sentence_context_spectrum::Int64 = 2
@@ -229,8 +231,14 @@ by performing an inner join.
 """
 function get_labelled_sentences_from_documents(document::Tuple{DataFrame, SymmachusArgs}, labelled_sentences::DataFrame)::Tuple{DataFrame, SymmachusArgs}
 	document_embedded, symmachus_args = document
-	select!(document_embedded, Not([:actor_name, :sentence_text])) # Avoiding duplicate columns downstream
-	labelled_sentences = innerjoin(labelled_sentences, document_embedded, on=[:doc_uuid, :sentence_id], makeunique=true)
+
+	select!(document_embedded, Not([:actor_name, :sentence_text]))
+
+	if "discourse_time" ∈ names(labelled_sentences)
+		select!(document_embedded, Not([:discourse_time])) # Avoiding duplicate columns downstream
+	end
+
+	labelled_sentences = innerjoin(labelled_sentences, document_embedded, on=[:doc_uuid, :sentence_id])#, makeunique=true)
 	return labelled_sentences, symmachus_args
 end
 
@@ -362,14 +370,14 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 	feature_labels_sorted_rev = sort(broadcast_targets, :label, rev=true)
 	feature_labels_sorted = sort(broadcast_targets, :label)
 
-	confident_predictions_rev = feature_labels_sorted_rev[1:75, :]
-	confident_predictions = feature_labels_sorted[1:75, :]
+	confident_predictions_rev = feature_labels_sorted_rev[1:100, :]
+	confident_predictions = feature_labels_sorted[1:100, :]
 
 	confident_predictions_all = concat_dataframes([confident_predictions_rev, confident_predictions])
 
 	transform!(confident_predictions_all, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob]) # We annotate the label to check the certainty of the model
 	transform!(confident_predictions_all, [:label] .=> ByRow(x -> round(x) |> Int) .=> [:label])
-	select!(confident_predictions_all, Not(r"_\d+|sentence_embedding")) # Removing duplicate columns
+	#select!(confident_predictions_all, Not(r"_\d+|sentence_embedding")) # Removing duplicate columns
 	return confident_predictions_all
 end
 
@@ -409,7 +417,7 @@ function sample_mutants(seed_argument::SymmachusArgs, genetic_args::GeneticArgs)
                     :max_discourse_context_size => (max_discourse_context_size-discourse_context_spectrum):(max_discourse_context_size+discourse_context_spectrum),
                     :max_sentence_context_size => (max_sentence_context_size-sentence_context_spectrum):(max_sentence_context_size+sentence_context_spectrum),
                     :self_weight => (self_weight-self_weight_spectrum):0.05:(self_weight+self_weight_spectrum),
-                    :grid_size => 7
+                    :grid_size => 9
     )
 
     function validate_argument(arg::Float64)
@@ -492,7 +500,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		@info "Current iteration performs at: $(best_model[:f1_score])"
 
-		new_deserialization_paths = sample_documents(unlabelled_data_path, embedded_sentences, 50) |> make_deserialization_paths
+		new_deserialization_paths = sample_documents(unlabelled_data_path, embedded_sentences, 60) |> make_deserialization_paths
 
 		new_documents = retrieve_documents(new_deserialization_paths) # Actually deserializes the documents
 
@@ -502,6 +510,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 		new_sentences = broadcast_labels(best_model, embedded_sentences, new_document_dataframe)
 
 		new_data_union = concat_dataframes([embedded_sentences, new_sentences])
+		select!(new_data_union, Not("sentence_embedding"))
 
 		# Removing the cached label DataFrame
 		deleteat!(label_data_container, 1)
@@ -522,7 +531,7 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 end
 
-labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 3, "./cache", GeneticArgs())
+labelled_data_final, model_history = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args_array, boosting_args_array, 30, "./cache", GeneticArgs())
 
 serialize("./cache/final_model/labelled_data_final.jls", labelled_data_final)
 serialize("./cache/final_model/model_history.jls", model_history)
