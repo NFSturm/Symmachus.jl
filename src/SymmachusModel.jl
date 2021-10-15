@@ -91,7 +91,7 @@ end
 		:num_rounds => 50:15:165,
 		:params => ["max_depth" => 2:5, "eta" => 0.1:0.1:1],
 		:true_threshold => 0.5:0.05:0.8,
-		:grid_size => 8
+		:grid_size => 7
 	)
 
 
