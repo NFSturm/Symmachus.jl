@@ -60,7 +60,7 @@ end
 
 	const word_lookup_table = get_word_lookup_table(embeddings_vocab)
 
-	global embeddings_lookup = Lookup(word_lookup_table, embeddings, embeddings_vocab)
+	global embeddings_lookup = Lookup(word_lookup_table, embeddings, embeddings_vocab) # FIXME: This is a memory bottleneck
 
 	@with_kw mutable struct SymmachusArgs
 		max_discourse_context_size::Int64
@@ -69,7 +69,12 @@ end
 	end
 
 	# Initializing the Symmachus model grid
-	grid = Dict(:max_discourse_context_size => 1:10, :max_sentence_context_size => 1:15, :self_weight => 0.5:0.05:0.9, :grid_size => 10)
+	grid = Dict(
+		:max_discourse_context_size => 1:10,
+		:max_sentence_context_size => 1:15,
+		:self_weight => 0.5:0.05:0.9,
+		:grid_size => 10
+	)
 
 	symmachus_args_array = [SymmachusArgs(
 		max_discourse_context_size = sample(grid[:max_discourse_context_size], 1) |> first,
@@ -108,7 +113,7 @@ end
 	) for i in 1:boosting_grid[:grid_size]]
 
 
-	@with_kw mutable struct GeneticArgs
+	@with_kw mutable struct GeneticArgs # This struct is responsible for the mutation spectrum
 	    sentence_context_spectrum::Int64 = 2
 	    discourse_context_spectrum::Int64 = 3
 	    self_weight_spectrum::Float64 = 0.2
@@ -382,7 +387,7 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 
 	transform!(confident_predictions_all, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob]) # We annotate the label to check the certainty of the model
 	transform!(confident_predictions_all, [:label] .=> ByRow(x -> round(x) |> Int) .=> [:label])
-	#select!(confident_predictions_all, Not(r"_\d+|sentence_embedding")) # Removing duplicate columns
+
 	return confident_predictions_all
 end
 
@@ -422,7 +427,7 @@ function sample_mutants(seed_argument::SymmachusArgs, genetic_args::GeneticArgs)
                     :max_discourse_context_size => (max_discourse_context_size-discourse_context_spectrum):(max_discourse_context_size+discourse_context_spectrum),
                     :max_sentence_context_size => (max_sentence_context_size-sentence_context_spectrum):(max_sentence_context_size+sentence_context_spectrum),
                     :self_weight => (self_weight-self_weight_spectrum):0.05:(self_weight+self_weight_spectrum),
-                    :grid_size => 9
+                    :grid_size => 7
     )
 
     function validate_argument(arg::Float64)
@@ -495,12 +500,15 @@ function train_self(labelled_data_path::String, unlabelled_data_path::String, sy
 
 		sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframes, Ref(label_data))
 
+		@info "Beginning model training. Calling XGBoost... – $(now())"
+
 		# Create the best boosting model for each dataframe
 		symmachus_boost_models = boost_sentence_data(sentence_label_data, boosting_args_array)
 
 		embedded_sentences, best_model = select_best_model(symmachus_boost_models, "f1_score")
 
 		# Updating the model spec container
+		@info "Updating model history..."
 		push!(model_specs_container, Dict(:symmachus_args => best_model[:symmachus_args], :boosting_args => best_model[:model_args], :performance => best_model[:f1_score]))
 
 		@info "Current iteration performs at: $(best_model[:f1_score])"
