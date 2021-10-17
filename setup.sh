@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Setting up the project
-sudo dnf install julia git neovim
+sudo dnf install julia git neovim unzip
 
 git clone https://github.com/NFSturm/Symmachus.jl.git
 cd Symmachus.jl
