@@ -21,6 +21,8 @@ using Pipe
 using Revise
 using Dates
 
+addprocs(5)
+
 @everywhere begin
 	using Pkg; Pkg.activate(".")
 
@@ -318,6 +320,8 @@ function run_symmachus(labelled_data_path::String, unlabelled_data_path::String,
 
 	new_document_dataframe = make_document_dataframe(
 		all_docs, symmachus_boost_model[:symmachus_args]) |> concat_dataframes
+
+	@info "Document embedding complete – $(now())"
 
 	all_sentences = broadcast_labels(best_model, embedded_sentences, all_docs)
 
