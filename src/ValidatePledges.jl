@@ -1,5 +1,6 @@
 using DataFrames
 using DataFramesMeta
+using Distributed
 using CSV
 using Dates
 using Parquet
@@ -9,11 +10,14 @@ using ThreadsX
 using Revise
 using UnPack
 
-include("RakeCore.jl")
+addprocs(5)
 
-using .RakeCore
+@everywhere begin
+    include("RakeCore.jl")
+    using .RakeCore
+end
 
-@doc """
+@everywhere @doc """
     read_deputy_activity(data_dir::String)::DataFrame
 
 Reads the deputy activity data from `data_dir`. Returns a DataFrame.
@@ -23,18 +27,18 @@ function read_deputy_activity(data_dir::String)::DataFrame
     activity = DataFrame(read_parquet(activity_file))
 end
 
-deputy_activity = read_deputy_activity("./data/deputy_activity")
+@everywhere deputy_activity = read_deputy_activity("./data/deputy_activity")
 
-@doc """
+@everywhere @doc """
 This function is necessary when the date column is in faulty UNIX time.
 """
 function format_unix_date_column(unix_date::Int64, index_range::UnitRange)::Date
     @pipe unix_date |> string |> _[index_range] |> parse(Int, _) |> unix2datetime
 end
 
-transform!(deputy_activity, :time .=> ByRow(x -> format_unix_date_column(x, 1:10)) .=> :datetime)
+@everywhere transform!(deputy_activity, :time .=> ByRow(x -> format_unix_date_column(x, 1:10)) .=> :datetime)
 
-@doc """
+@everywhere @doc """
     read_labelled_data(data_file::String)::DataFrame
 
 Reads labelled data from `data_dir`. Returns a DataFrame.
@@ -43,15 +47,18 @@ function read_labelled_data(data_file::String)::DataFrame
     labelled_data = DataFrame(CSV.File(data_file))
 end
 
-labelled_data = @pipe read_labelled_data("./cache/temp_cache/label_data_test.csv")
+@everywhere begin
 
-transform!(labelled_data, :sentence_text => ByRow(x -> replace(x, r"\d{1,2}\s*DE\s*[A-Z]{4,9}\s*DE\s*\d{4}" => s"")) => :sentence_text)
+    labelled_data = @pipe read_labelled_data("./cache/temp_cache/label_data_test.csv")
 
-filter_pledges(data::DataFrame) = @subset(data, :label .== 1)
+    transform!(labelled_data, :sentence_text => ByRow(x -> replace(x, r"\d{1,2}\s*DE\s*[A-Z]{4,9}\s*DE\s*\d{4}" => s"")) => :sentence_text)
 
-pledges_data = filter_pledges(labelled_data)
+    filter_pledges(data::DataFrame) = @subset(data, :label .== 1)
 
-@doc """
+    pledges_data = filter_pledges(labelled_data)
+end
+
+@everywhere @doc """
     make_pledge_validation_endpoints(pledge_date::Date, time_period::Int64)::Tuple{Date}
 
 Given a `pledge_date`, the function returns a Tuple of dates that set endpoints for `time_period` \n
@@ -61,15 +68,19 @@ function make_pledge_validation_endpoints(pledge_date::Date, time_period::Int64)
     pledge_date - Year(time_period), pledge_date + Year(time_period)
 end
 
-is_minister_name(name::String) = occursin("Ministr", name)
+@everywhere begin
 
-deputy_names = labelled_data[!, :actor_name] |> Set |> collect .|> string
+    is_minister_name(name::String) = occursin("Ministr", name)
 
-clean_deputy_names = @pipe deputy_names |> Filter(!is_minister_name) |> collect
+    deputy_names = labelled_data[!, :actor_name] |> Set |> collect .|> string
 
-stopwords = read_stopwords("./stopwords/stopwords.txt")
+    clean_deputy_names = @pipe deputy_names |> Filter(!is_minister_name) |> collect
 
-@doc """
+    stopwords = read_stopwords("./stopwords/stopwords.txt")
+
+end
+
+@everywhere @doc """
     validate_pledges(name::String, labelled_data::DataFrame, deputy_activity::DataFrame)::DataFrame
 
 Validates implicit pledges (labelled as *1*) by generating keyword tuples from each pledge in `labelled_data` and \n
