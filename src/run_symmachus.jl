@@ -76,11 +76,9 @@ end
 		train_prop::Float64 # Proportion of observations to be used for training
 	end
 
-	@with_kw mutable struct GeneticArgs # This struct is responsible for the mutation spectrum
-	    sentence_context_spectrum::Int64 = 2
-	    discourse_context_spectrum::Int64 = 3
-	    self_weight_spectrum::Float64 = 0.2
-	end
+	symmachus_args = @pipe deserialize("./cache/final_model/model_history.jls") |> last |> _[:symmachus_args]
+	boosting_args = @pipe deserialize("./cache/final_model/model_history.jls") |> last |> _[:boosting_args]
+
 end
 
 
@@ -145,6 +143,7 @@ function doc_to_sent(doc::Document, symmachus_args::SymmachusArgs)
         push!(embedded_dataframe, row)
     end
 
+	@info "Embedded document – $(now())"
     return embedded_dataframe
 end
 
@@ -192,12 +191,12 @@ end
 #@everywhere sentence_label_data = deserialize("./cache/sentence_label_data.jls")
 
 @doc """
-    get_labelled_sentences_from_documents(document::Tuple{DataFrame, SymmachusArgs}, labelled_sentences::DataFrame)::DataFrame
+    get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
 
 Extracts those sentences from embedded `documents` that are in `labelled_sentences` \n
 by performing an inner join.
 """
-function get_labelled_sentences_from_documents(document::Tuple{DataFrame, SymmachusArgs}, labelled_sentences::DataFrame)::Tuple{DataFrame, SymmachusArgs}
+function get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
 	document_embedded, symmachus_args = document
 
 	select!(document_embedded, Not([:actor_name, :sentence_text]))
@@ -207,7 +206,7 @@ function get_labelled_sentences_from_documents(document::Tuple{DataFrame, Symmac
 	end
 
 	labelled_sentences = innerjoin(labelled_sentences, document_embedded, on=[:doc_uuid, :sentence_id])#, makeunique=true)
-	return labelled_sentences, symmachus_args
+	return labelled_sentences
 end
 
 @everywhere @doc """
@@ -228,43 +227,13 @@ function predict_booster(booster::Booster, test_data)
 end
 
 
-@everywhere @doc """
-    boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args_array::BoostingArgs)
-Trains a booster on `feature_data` and `label_data`. Arguments of the model can be \n
-specified using `boosting_args`.
-"""
-function boost(sentence_label_data::Tuple{DataFrame, SymmachusArgs}, boosting_args::BoostingArgs)
-	sentence_label_data, symmachus_args = sentence_label_data
-	X_train, y_train, X_test, y_test = make_train_test_data(sentence_label_data, "sentence_embedding", "label", boosting_args.train_prop)
-
-	model_uuid = uuid4() |> string
-
-	@suppress begin
-		bst = train_booster(X_train, y_train, arg)
-		predictions = predict_booster(bst, X_test)
-		confmat = confusion_matrix(predictions, y_test, arg.true_threshold)
-		f1_model_score = f1_score(confmat)
-
-		model = Dict(
-			:model_id => model_uuid,
-			:f1_score => f1_model_score,
-			:model_args => arg,
-			:symmachus_args => symmachus_args
-			)
-		)
-	end
-
-	sentence_label_data, model
-end
-
-
 @doc """
     broadcast_labels(best_model::Dict{Symbol, Any}, broadcast_targets::DataFrame)::DataFrame
 
 Using the specifications of `best_model`, the labels are broadcast to `broadcast_targets`, \n
 which are the datapoints that are newly sampled.
 """
-function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, broadcast_targets::DataFrame)::DataFrame
+function broadcast_labels(args::BoostingArgs, label_data::DataFrame, broadcast_targets::DataFrame)::DataFrame
 
 	features = broadcast_targets[!, :sentence_embedding]
 	feature_matrix = convert(Array{Float64}, transpose(hcat(features...)))
@@ -273,7 +242,7 @@ function broadcast_labels(best_model::Dict{Symbol, Any}, label_data::DataFrame, 
 	train_labels = convert(Array{Int64}, label_data[!, :label])
 
 	@suppress begin
-		bst = train_booster(train_feature_matrix, train_labels, best_model[:model_args])
+		bst = train_booster(train_feature_matrix, train_labels, args)
 		feature_labels = predict_booster(bst, feature_matrix)
 		broadcast_targets[!, :label] = feature_labels
 	end
@@ -293,8 +262,8 @@ Trains the XGBoost model on existing, labelled data in `labelled_data_path`. Thi
 function run_symmachus(labelled_data_path::String, unlabelled_data_path::String, symmachus_args::SymmachusArgs, boosting_args::BoostingArgs)
 
 	# Read labelled data from disk
-	label_data = DataFrame(CSV.File(labelled_data_path))
-	transform!(seed_label_data, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob])
+	label_data = deserialize(labelled_data_path)
+	transform!(label_data, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob])
 
 	# Read unlabelled file names from disk
 	files = readdir(unlabelled_data_path)
@@ -307,28 +276,24 @@ function run_symmachus(labelled_data_path::String, unlabelled_data_path::String,
 
 	documents = retrieve_documents(deserialization_paths)
 
-	sentence_label_dataframes = make_document_dataframe(documents, symmachus_arg)
+	sentence_label_dataframe = make_document_dataframe(documents, symmachus_args)
 
-	sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframes, Ref(label_data))
+	@info "Embedded training label data – $(now())"
 
-	@info "Beginning model training. Calling XGBoost... – $(now())"
+	sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframe, Ref(label_data))
 
-	# Create the best boosting model for each dataframe
-	symmachus_boost_model = boost(sentence_label_data, boosting_args)
-
-	all_docs = retrieve_documents(files) # Actually deserializes the documents
+	all_docs = retrieve_documents(files) # Deserializes the entire corpus
 
 	new_document_dataframe = make_document_dataframe(
-		all_docs, symmachus_boost_model[:symmachus_args]) |> concat_dataframes
+		all_docs, symmachus_args) |> concat_dataframes
 
-	@info "Document embedding complete – $(now())"
+	@info "Document embedding completed – $(now())"
 
-	all_sentences = broadcast_labels(best_model, embedded_sentences, all_docs)
+	all_sentences = broadcast_labels(boosting_args, sentence_label_data, new_document_dataframe)
 
-	all_data_union = concat_dataframes([embedded_sentences, new_sentences])
-	select!(new_data_union, Not("sentence_embedding"))
+	select!(all_sentences, Not("sentence_embedding"))
 
-	all_data_union
+	all_sentences
 end
 
-labelled_data_final = train_self("./data/labels/labels.csv", "./data/speech_docs", symmachus_args, boosting_args)
+labelled_data_final = run_symmachus("./cache/final_model/labelled_data_final.jls", "./data/speech_docs", symmachus_args, boosting_args)
