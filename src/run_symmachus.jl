@@ -197,15 +197,14 @@ Extracts those sentences from embedded `documents` that are in `labelled_sentenc
 by performing an inner join.
 """
 function get_labelled_sentences_from_documents(document::DataFrame, labelled_sentences::DataFrame)::DataFrame
-	document_embedded, symmachus_args = document
 
-	select!(document_embedded, Not([:actor_name, :sentence_text]))
+	select!(document, Not([:actor_name, :sentence_text]))
 
 	if "discourse_time" ∈ names(labelled_sentences)
-		select!(document_embedded, Not([:discourse_time])) # Avoiding duplicate columns downstream
+		select!(document, Not([:discourse_time])) # Avoiding duplicate columns downstream
 	end
 
-	labelled_sentences = innerjoin(labelled_sentences, document_embedded, on=[:doc_uuid, :sentence_id])#, makeunique=true)
+	labelled_sentences = innerjoin(labelled_sentences, document, on=[:doc_uuid, :sentence_id])#, makeunique=true)
 	return labelled_sentences
 end
 
@@ -263,7 +262,6 @@ function run_symmachus(labelled_data_path::String, unlabelled_data_path::String,
 
 	# Read labelled data from disk
 	label_data = deserialize(labelled_data_path)
-	transform!(label_data, [:label] .=> ByRow(x -> Float64(x)) .=> [:label_prob])
 
 	# Read unlabelled file names from disk
 	files = readdir(unlabelled_data_path)
@@ -276,18 +274,22 @@ function run_symmachus(labelled_data_path::String, unlabelled_data_path::String,
 
 	documents = retrieve_documents(deserialization_paths)
 
-	sentence_label_dataframe = make_document_dataframe(documents, symmachus_args)
+	sentence_label_dataframe = make_document_dataframe(documents, symmachus_args) |> concat_dataframes
 
 	@info "Embedded training label data – $(now())"
 
-	sentence_label_data = get_labelled_sentences_from_documents.(sentence_label_dataframe, Ref(label_data))
+	sentence_label_data = get_labelled_sentences_from_documents(sentence_label_dataframe, label_data)
 
-	all_docs = retrieve_documents(files) # Deserializes the entire corpus
+	all_docs = retrieve_documents(readdir(unlabelled_data_path, join=true)) # Deserializes the entire corpus
+
+	@info "Embedding unlabelled data – $(now())"
 
 	new_document_dataframe = make_document_dataframe(
 		all_docs, symmachus_args) |> concat_dataframes
 
 	@info "Document embedding completed – $(now())"
+
+	@info "Broadcasting labels – $(now())"
 
 	all_sentences = broadcast_labels(boosting_args, sentence_label_data, new_document_dataframe)
 
