@@ -139,7 +139,11 @@ function rake(sentence::String, keyword_length::Int64, stopwords::Vector{String}
 
     scored_keywords = get_keyword_scores.(candidate_scores, Ref(filtered_lookup_reverse))
 
-    return scored_keywords
+    num_keywords = length(Set(words_encoded))/3 |> floor
+
+    top_keywords = sort(scored_keywords, by = x -> x[2], rev=true)[1:num_keywords]
+
+    return top_keywords
 end
 
 @doc """
