@@ -114,7 +114,7 @@ function rake(sentence::String, keyword_length::Int64, stopwords::Vector{String}
 
     filtered_words = stopword_or_word.(words_encoded, Ref(stopwords), Ref(lookup)) |> Filter(x -> !isnothing(x)) |> collect
     ngrams = make_ngrams(filtered_words, keyword_length)
-    close_ngrams = get_close_ngrams.(ngrams, keyword_length + 1) |> Filter(x -> !isnothing(x)) |> collect
+    close_ngrams = get_close_ngrams.(ngrams, keyword_length + 2) |> Filter(x -> !isnothing(x)) |> collect
 
     string_ngrams = get_word_from_index.(Ref(lookup), close_ngrams)
 
