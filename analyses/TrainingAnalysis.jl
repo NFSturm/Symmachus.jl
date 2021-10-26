@@ -1,6 +1,7 @@
 using DataFrames
 using StatsBase
 using Gadfly
+using Cairo
 using Serialization
 using Pipe
 
@@ -47,11 +48,20 @@ end
 
 performance_dataframe = create_performance_dataframe(model_history)
 
-plot(performance_dataframe,
+performance_plot = plot(performance_dataframe,
     x=:epoch,
     y=:f1_score,
     Geom.point,
     Geom.line,
     Guide.xlabel("Epoch No."),
-    Guide.ylabel("F1 Score on Test Set")
+    Guide.ylabel("F1 Score on Test Set"),
+    Theme(
+        default_color=colorant"#4169e1",
+        line_width=1mm,
+        point_size=2mm,
+        minor_label_font_size=12pt,
+        major_label_font_size=15pt
+    )
 )
+
+draw(PNG("./plots/labelling_performance.png", 10inch, 6inch), performance_plot)

@@ -47,11 +47,11 @@ function stopword_or_word(word_position::Int64, stopwords::Vector{String}, globa
 end
 
 function make_ngrams(words::Vector{Int64}, ngram_size::Int64)::Vector{NTuple{ngram_size, Int64}}
-    collect(partition(words, ngram_size, 1))
+    collect(partition(words, ngram_size))
 end
 
 function get_close_ngrams(ngram::NTuple{N, Int64}, max_distance::Int64)::Union{Nothing, NTuple{N, Int64}} where N
-    constituent_pairs = partition(ngram, 2, 1) |> collect
+    constituent_pairs = partition(ngram, 2) |> collect
     constituents_close = @chain constituent_pairs begin
         reduce.(-, _)
         abs.(_)
@@ -112,11 +112,13 @@ function rake(sentence::String, keyword_length::Int64, stopwords::Vector{String}
     lookup = make_global_lookup(tokenized_sentence)
     words_encoded = encode_words(tokenized_sentence)
 
+    # Removing stopwords as defined
+    filtered_words = stopword_or_word.(words_encoded, Ref(stopwords), Ref(lookup)) |> Filter(x -> !isnothing(x)) |> collect
+
     filtered_words = stopword_or_word.(words_encoded, Ref(stopwords), Ref(lookup)) |> Filter(x -> !isnothing(x)) |> collect
     ngrams = make_ngrams(filtered_words, keyword_length)
-    close_ngrams = get_close_ngrams.(ngrams, keyword_length + 2) |> Filter(x -> !isnothing(x)) |> collect
 
-    string_ngrams = get_word_from_index.(Ref(lookup), close_ngrams)
+    string_ngrams = get_word_from_index.(Ref(lookup), ngrams)
 
     filtered_word_strings = getindex.(Ref(lookup), filtered_words)
 
@@ -139,9 +141,9 @@ function rake(sentence::String, keyword_length::Int64, stopwords::Vector{String}
 
     scored_keywords = get_keyword_scores.(candidate_scores, Ref(filtered_lookup_reverse))
 
-    num_keywords = length(Set(words_encoded))/3 |> floor
+    num_keywords = length(Set(words_encoded))/3 |> floor |> Int
 
-    top_keywords = sort(scored_keywords, by = x -> x[2], rev=true)[1:num_keywords]
+    top_keywords = sort(scored_keywords, by = x -> x[2], rev=true)[1:min(length(scored_keywords), num_keywords)]
 
     return top_keywords
 end
