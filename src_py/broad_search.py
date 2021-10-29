@@ -1,4 +1,6 @@
+import re
 import spacy
+import logging
 import pandas as pd
 from tqdm import tqdm
 from typing import *
@@ -46,6 +48,27 @@ def generate_collocated_phrases(sentences: List[str]):
 
 if __name__ == '__main__':
 
+    #*******************SETTING LOGGER ******************** 
+
+    logger = logging.getLogger('transformer-logger')
+    logger.setLevel(logging.INFO)
+
+    file_handler = logging.FileHandler('./logs/sentence-transformer.log')
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(console_handler)
+
+    #*******************DATA IMPORTS ******************** 
+
+    logger.info("Importing models and references.")
+
     nlp = spacy.load('pt_core_news_lg')
 
     stopwords = read_stopwords("../stopwords/stopwords.txt")
@@ -53,6 +76,8 @@ if __name__ == '__main__':
     activities = pd.read_csv("../data/datasets/deputy_activity.csv")
 
     speech_acts = pd.read_csv("../data/datasets/labelled_data_filtered.csv")
+
+    logger.info("Removing stopwords for activities and speech acts.")
 
     # Preparing texts for lemmatization
     activity_text_without_stopwords = [remove_stopwords(text, stopwords) for text in activities.loc[:, "text"]]
@@ -70,6 +95,8 @@ if __name__ == '__main__':
 
     # Lemmatizing activities
 
+    logger.info("Lemmatizing activities…")
+
     pbar = tqdm(total=len(activity_text_without_stopwords))
 
     activities_lemmatized = []
@@ -82,6 +109,8 @@ if __name__ == '__main__':
     pbar.close()
 
     # Lemmatizing speech acts
+
+    logger.info("Lemmatizing speech acts…")
 
     pbar = tqdm(total=len(speech_acts_ls))
 
@@ -96,11 +125,15 @@ if __name__ == '__main__':
 
     #*******************GENERATING PHRASE COLLOCATIONS ******************** 
 
+    logger.info("Generating collactions for speech acts and activities.")
+
     collacted_phrases_speech_acts = generate_collocated_phrases(speech_acts_ls)
 
     collocated_phrases_activities = generate_collocated_phrases(texts)
 
     #*******************GENERATING SENTENCE-TRANSFORMER EMBEDDINGS ******************** 
+
+    logger.info("Retrieving sentence-transformers…")
 
     # Portuguese Sentence Transformer (PT_MODEL)
     pt_model = SentenceTransformer("ricardo-filho/bert-portuguese-cased-nli-assin-assin-2")
@@ -109,6 +142,9 @@ if __name__ == '__main__':
     ml_model = SentenceTransformer("distiluse-base-multilingual-cased-v1")
 
     # Encoding activities using PT_MODEL
+
+    logger.info("Encoding activities…")
+
     pbar = tqdm(total=len(texts))
 
     activities_encoded_pt = []
@@ -133,6 +169,9 @@ if __name__ == '__main__':
     pbar.close()
 
     # Encoding speech acts using PT_MODEL
+
+    logger.info("Encoding speech acts…")
+
     pbar = tqdm(total=len(speech_acts_ls))
 
     speech_acts_encoded_pt = []
@@ -159,6 +198,8 @@ if __name__ == '__main__':
 
     #*******************CREATING DATAFRAMES FOR EXPORT ******************** 
 
+    logger.info("Preparing encoded DataFrames for export…")
+
     unique_activities.loc[:, "encoded_activities_ml"] = activities_encoded_ml
     speech_acts.loc[:, "encoded_speech_acts_ml"] = speech_acts_encoded_ml
 
@@ -172,3 +213,5 @@ if __name__ == '__main__':
 
     unique_activities.to_csv("../data/encoded_datasets/activities_encoded.csv", index=False)
     speech_acts.to_csv("../data/encoded_datasets/speech_acts_encoded.csv", index=False)
+
+    logger.info("DataFrames exported. Wrapping up…")
