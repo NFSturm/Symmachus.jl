@@ -74,14 +74,12 @@ performance_plot = plot(performance_dataframe,
 performance_plot = plot(performance_dataframe,
     x=:epoch,
     y=:f1_score,
-    Geom.point,
     Geom.line,
     Guide.xlabel("Epoch No."),
     Guide.ylabel("F1 Score on Test Set"),
     Theme(
         default_color=colorant"#4169e1",
-        line_width=1mm,
-        point_size=2mm,
+        line_width=1.25mm,
         minor_label_font_size=12pt,
         major_label_font_size=15pt
     )
@@ -155,9 +153,11 @@ context_plot = plot(
     Guide.colorkey(title="Parameter Names", labels=["Max Discourse Context", "Max Sentence Context"]),
     Scale.color_discrete(n -> get(ColorSchemes.tol_muted, range(0,1, length=n))),
     Theme(
-        line_width=1mm,
+        line_width=1.25mm,
         minor_label_font_size=12pt,
-        major_label_font_size=15pt
+        major_label_font_size=15pt,
+        key_title_font_size=14pt,
+        key_label_font_size=12pt
     )
 )
 
@@ -179,9 +179,11 @@ self_weight_plot = plot(
     Guide.colorkey(title="Parameter Names", labels=["Self Weight"]),
     Scale.color_discrete(n -> get(ColorSchemes.Set2_3, range(1, length=n))),
     Theme(
-        line_width=1mm,
+        line_width=1.25mm,
         minor_label_font_size=12pt,
-        major_label_font_size=15pt
+        major_label_font_size=15pt,
+        key_title_font_size=14pt,
+        key_label_font_size=12pt
     )
 )
 
