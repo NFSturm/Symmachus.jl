@@ -1,5 +1,5 @@
 import re
-import spacy
+import stanza
 import logging
 import pandas as pd
 from tqdm import tqdm
@@ -24,10 +24,11 @@ def remove_stopwords(sent: str, stopwords: List[str]) -> str:
 
 
 # Insert lemmatization step
-def lemmatize(sent, allowed_postags=['NOUN', 'ADJ']):#, 'VERB', 'ADV']):
+def lemmatize(sent, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ADV']):
     doc = nlp(sent)
-    tokens = [token.lemma_ for token in doc if token.pos_ in allowed_postags]
+    tokens = [word.lemma for sent in doc.sentences for word in sent.words if word.pos in allowed_postags]
     return " ".join(tokens)
+    
 
 def generate_collocated_phrases(sentences: List[str]):
     """
@@ -35,11 +36,11 @@ def generate_collocated_phrases(sentences: List[str]):
      Lemmatized sentences 
     """
     sents_new = [sent.split(" ") for sent in sentences]
-    phrases = Phrases(sents_new, min_count=5, threshold=20)
+    phrases = Phrases(sents_new, scoring='npmi', min_count=7, threshold=-0.5)
 
     bigram_model = Phraser(phrases)
 
-    trigram = Phrases(bigram_model[sents_new], min_count=5, threshold=20)
+    trigram = Phrases(bigram_model[sents_new], scoring='npmi', min_count=7, threshold=-0.5)
 
     trigram_model = Phraser(trigram)
 
@@ -69,7 +70,7 @@ if __name__ == '__main__':
 
     logger.info("Importing models and references.")
 
-    nlp = spacy.load('pt_core_news_lg')
+    nlp = stanza.Pipeline(lang='pt', processors='tokenize,mwt,pos,lemma')
 
     stopwords = read_stopwords("../stopwords/stopwords.txt")
 
@@ -79,13 +80,13 @@ if __name__ == '__main__':
 
     logger.info("Removing stopwords for activities and speech acts.")
 
-    # Preparing texts for lemmatization
-    activity_text_without_stopwords = [remove_stopwords(text, stopwords) for text in activities.loc[:, "text"]]
-
-    speech_acts_without_stopwords = [remove_stopwords(text, stopwords) for text in speech_acts.loc[:, "sentence_text"]]
-
     # Dropping duplicate activities
     unique_activities = activities.drop_duplicates(subset=["time", "name", "key"])
+
+    # Preparing texts for lemmatization
+    activity_text_without_stopwords = [remove_stopwords(text, stopwords) for text in unique_activities.loc[:, "text"]]
+
+    speech_acts_without_stopwords = [remove_stopwords(text, stopwords) for text in speech_acts.loc[:, "sentence_text"]]
 
     # Extracting texts as list
     texts = unique_activities.loc[:, "text"]
@@ -116,7 +117,7 @@ if __name__ == '__main__':
 
     speech_acts_lemmatized = []
 
-    for text in speech_acts_ls:
+    for text in speech_acts_without_stopwords:
         text_lemmatized = lemmatize(text)
         speech_acts_lemmatized.append(text_lemmatized)
         pbar.update(1)
@@ -125,11 +126,11 @@ if __name__ == '__main__':
 
     #*******************GENERATING PHRASE COLLOCATIONS ******************** 
 
-    logger.info("Generating collactions for speech acts and activities.")
+    logger.info("Generating collocations for speech acts and activities.")
 
-    collacted_phrases_speech_acts = generate_collocated_phrases(speech_acts_ls)
+    collocated_phrases_speech_acts = generate_collocated_phrases(speech_acts_lemmatized)
 
-    collocated_phrases_activities = generate_collocated_phrases(texts)
+    collocated_phrases_activities = generate_collocated_phrases(activities_lemmatized)
 
     #*******************GENERATING SENTENCE-TRANSFORMER EMBEDDINGS ******************** 
 
@@ -204,10 +205,10 @@ if __name__ == '__main__':
     speech_acts.loc[:, "encoded_speech_acts_ml"] = speech_acts_encoded_ml
 
     unique_activities.loc[:, "encoded_activities_pt"] = activities_encoded_pt
-    speech_acts.loc[:, "encoded_speech_act"] = speech_acts_encoded_pt
+    speech_acts.loc[:, "encoded_speech_acts_pt"] = speech_acts_encoded_pt
 
     unique_activities.loc[:, "activity_phrases"] = collocated_phrases_activities
-    speech_acts.loc[:, "speech_act_phrases"] = collacted_phrases_speech_acts
+    speech_acts.loc[:, "speech_act_phrases"] = collocated_phrases_speech_acts
 
     #*******************CREATING DATAFRAMES FOR EXPORT ******************** 
 
