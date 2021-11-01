@@ -7,14 +7,15 @@
 
 💡 This project is realized as a Master thesis at Nova School of Business and Economics, Lisbon under the supervision of Prof. Leid Zejnilovic. 
 
-📄 Symmachus is a semi-supervised Machine Learning system. The idea is to use a small, but expressive dataset containing phrases containing political convictions and normative statements from the Portuguese parliament and gradually building a bigger dataset, which can then be used for analysis. 
+📄 Symmachus implements a semantic search engine for Portuguese politics. 
 
-💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for the discourse aspect and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities. The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
+💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives). The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
 
-⌨️ There are several components to this repository:
+⌨️ There are two main components in this repository:
 
-1. There is *SymmachusCore*, which is a way of embedding a sentence by considering both the immediate surroundings of the sentence root on a token level and the neighbouring sentences of the one in question. To this end it uses FastText embeddings provided by `Embeddings.jl`. 
-2. A self-training labelling machine based on `XGBoost.jl` is used to generate a dataset large enough to reliably train a broadcasting device on it. Using this device, the entire dataset is labelled in order to make it ready for analysis.
+1. *SymmachusCore*, which implements a custom document embedding procedure. That procedure is used to filter the data, according to specific speech acts, especially those stating explicit or implicit political intentions.
+
+2. A search engine on the basis of `sentence-transformers`. This can be used to filter specific topics as well as *scan* the statements of an individual politician.
 
 
 
