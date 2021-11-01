@@ -9,11 +9,11 @@
 
 📄 Symmachus implements a semantic search engine for Portuguese politics. 
 
-💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives). The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
+💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary speeches and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives). The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
 
 ⌨️ There are two main components in this repository:
 
-1. *SymmachusCore*, which implements a custom document embedding procedure. That procedure is used to filter the data, according to specific speech acts, especially those stating explicit or implicit political intentions.
+1. *SymmachusCore*, which implements a custom document embedding procedure based on word position and syntactic importance. That procedure is used to filter the data, according to specific speech acts, especially those stating explicit or implicit political intentions.
 
 2. A search engine on the basis of `sentence-transformers`. This can be used to filter specific topics as well as *scan* the statements of an individual politician.
 
