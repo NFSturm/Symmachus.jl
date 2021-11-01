@@ -3,7 +3,7 @@ import stanza
 import logging
 import pandas as pd
 from tqdm import tqdm
-from typing import *
+from typing import List
 from gensim.models.phrases import Phrases, Phraser
 from sentence_transformers import SentenceTransformer
 
