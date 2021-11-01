@@ -15,7 +15,6 @@
 
 1. There is *SymmachusCore*, which is a way of embedding a sentence by considering both the immediate surroundings of the sentence root on a token level and the neighbouring sentences of the one in question. To this end it uses FastText embeddings provided by `Embeddings.jl`. 
 2. A self-training labelling machine based on `XGBoost.jl` is used to generate a dataset large enough to reliably train a broadcasting device on it. Using this device, the entire dataset is labelled in order to make it ready for analysis.
-3. To then conduct the analysis, a re-implementation of *Rake (Rapid Automatic Keyword Extraction)* (described by e.g. *Berry & Kogan* (2010)) is employed. This serves to compare the two datasets on a sentence-by-sentence level. 
 
 
 
