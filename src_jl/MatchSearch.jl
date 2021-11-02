@@ -98,3 +98,44 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
 
     statistics
 end
+
+
+@doc """
+    validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float64, Float64}
+
+Computes two evaluation metrics for a `name` query search.
+"""
+function validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float64, Float64}
+    statistics = similarity_search(name, (:encoded_speech_acts_ml, :encoded_activities_ml), encoded_speech_acts, encoded_activities)
+
+    speaker_subset = @subset encoded_speech_acts begin
+        :actor_name .== name
+    end
+
+    activity_subset = @subset encoded_activities begin
+        :name .== name
+    end
+
+    all_activity_phrases = []
+
+    for activity_statistic in eachrow(statistics)
+        phrase_indices = activity_statistic[:sim_searches]
+
+        phrases = Vector{String}[]
+
+        foreach(phrase_indices) do p
+            activity_phrases = activity_subset[p, :activity_phrases]
+            push!(phrases, activity_phrases)
+        end
+
+        push!(all_activity_phrases, reduce(vcat, phrases))
+    end
+
+    average_keyword_matches = @pipe intersect.(speaker_subset[:, :speech_act_phrases], all_activity_phrases) |>
+                            length.(_) |>
+                            mean
+
+    aggregate_distance = statistics[:, :average_dist] |> mean
+
+    average_keyword_matches, aggregate_distance
+end
