@@ -139,3 +139,20 @@ function validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, en
 
     average_keyword_matches, aggregate_distance
 end
+
+
+@doc """
+    get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float32, Float32}
+
+Iterative version of `validate_search`. Iterates over `names` and generates aggregate performance statistics.
+"""
+function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float32, Float32}
+
+    stats = Tuple{Float32, Float32}[]
+
+    for name in names
+        push!(stats, validate_search(name, encoding_model, encoded_speech_acts, encoded_activities))
+    end
+
+    mean(getindex.(stats, 1)), mean(getindex.(stats, 2))
+end
