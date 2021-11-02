@@ -48,16 +48,16 @@ function compute_nearest_neighbours(comparison_point::Vector{Float32}, data::Vec
     # Creating data matrices
     data_matrix = hcat(data...)
 
-    # Catching the case when there are more requested neighbors than data points
-    if size(data_matrix)[2] >= num_neighbors
-        num_neighbors = size(data_matrix)[2]
-    end
-
     # Instantiating the splitting tree
     balltree = BallTree(data_matrix, Minkowski(3); reorder = false)
 
     # Computing indices and distances
-    idxs, dists = knn(balltree, comparison_point, num_neighbors, true)
+    # Catching the case when there are more requested neighbors than data points
+    if size(data_matrix)[2] >= num_neighbors
+        idxs, dists = knn(balltree, comparison_point, Int(floor(size(data_matrix)[2]/2)), true)
+    else
+        idxs, dists = knn(balltree, comparison_point, num_neighbors, true)
+    end
 
     idxs, dists
 end
@@ -98,6 +98,18 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
 end
 
 sample_names(names::Vector{String}, number_of_names::Int64) = sample(names, number_of_names)
+
+@doc """
+    validate_data_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+
+Returns names that are in both `encoded_speech_acts` and `encoded_activities`.
+"""
+function validate_data_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+    speech_act_names = encoded_speech_acts[:, :actor_name]
+    activity_names = encoded_activities[:, :name]
+
+    intersect(speech_act_names, activity_names)
+end
 
 
 @doc """
@@ -161,6 +173,9 @@ function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Sy
     mean(getindex.(stats, 1)), mean(getindex.(stats, 2))
 end
 
+
+validate_data_integrity(encoded_speech_acts, encoded_activities)
+
 encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
 
 transform!(encoded_activities, :encoded_activities_ml => ByRow(x -> parse_encoding(x)) => :encoded_activities_ml)
@@ -173,7 +188,7 @@ transform!(encoded_speech_acts, :encoded_speech_acts_ml => ByRow(x -> parse_enco
 transform!(encoded_speech_acts, :encoded_speech_acts_pt => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_pt)
 transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
 
-politician_names = @pipe encoded_activities[:, :name] |>
+politician_names = @pipe validate_data_integrity(encoded_speech_acts, encoded_activities) |>
                 Set .|>
                 String |>
                 collect |>
