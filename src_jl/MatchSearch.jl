@@ -4,6 +4,8 @@ using CSV
 using Chain
 using NearestNeighbors
 using StatsBase
+using Pipe
+using ProgressMeter
 using Revise
 
 @doc """
@@ -13,12 +15,13 @@ Given a string `encoding` of an array, returns a float array.
 """
 function parse_encoding(encoding::String)
     @chain encoding begin
-        replace(_, r"[\]\[\n]\)\(" => s"") |> strip
+        replace(_, r"[\[\]\)\(\n]" => s"") |> strip
         split(_, " ")
         filter(!isempty, _) .|> String
         parse.(Float32, _)
     end
 end
+
 
 @doc """
     parse_phrases(phrase::String)
@@ -41,8 +44,14 @@ Computes the `num_neighbors` from `data`. The data is supposed to be in the \n
 `encoding_column`. Returns the indices and distances.
 """
 function compute_nearest_neighbours(comparison_point::Vector{Float32}, data::Vector{Vector{Float32}}, num_neighbors::Int64)::Tuple{Vector{Int64}, Vector{Float32}}
+
     # Creating data matrices
     data_matrix = hcat(data...)
+
+    # Catching the case when there are more requested neighbors than data points
+    if size(data_matrix)[2] >= num_neighbors
+        num_neighbors = size(data_matrix)[2]
+    end
 
     # Instantiating the splitting tree
     balltree = BallTree(data_matrix, Minkowski(3); reorder = false)
@@ -53,17 +62,6 @@ function compute_nearest_neighbours(comparison_point::Vector{Float32}, data::Vec
     idxs, dists
 end
 
-encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
-
-transform!(encoded_activities, :encoded_activities_ml => ByRow(x -> parse_encoding(x)) => :encoded_activities_ml)
-transform!(encoded_activities, :encoded_activities_pt => ByRow(x -> parse_encoding(x)) => :encoded_activities_pt)
-transform!(encoded_activities, :activity_phrases => ByRow(x -> parse_phrases(x)) => :activity_phrases)
-
-encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
-
-transform!(encoded_speech_acts, :encoded_speech_acts_ml => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_ml)
-transform!(encoded_speech_acts, :encoded_speech_act => ByRow(x -> parse_encoding(x)) => :encoded_speech_act)
-transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
 
 @doc """
    similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::DataFrame
@@ -99,14 +97,16 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
     statistics
 end
 
+sample_names(names::Vector{String}, number_of_names::Int64) = sample(names, number_of_names)
+
 
 @doc """
-    validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float64, Float64}
+    validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float32, Float32}
 
 Computes two evaluation metrics for a `name` query search.
 """
-function validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float64, Float64}
-    statistics = similarity_search(name, (:encoded_speech_acts_ml, :encoded_activities_ml), encoded_speech_acts, encoded_activities)
+function validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float32, Float32}
+    statistics = similarity_search(name, encoding_model, encoded_speech_acts, encoded_activities)
 
     speaker_subset = @subset encoded_speech_acts begin
         :actor_name .== name
@@ -150,9 +150,35 @@ function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Sy
 
     stats = Tuple{Float32, Float32}[]
 
+    n = length(names)
+    p = Progress(n, 1)
+
     for name in names
         push!(stats, validate_search(name, encoding_model, encoded_speech_acts, encoded_activities))
+        next!(p)
     end
 
     mean(getindex.(stats, 1)), mean(getindex.(stats, 2))
 end
+
+encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
+
+transform!(encoded_activities, :encoded_activities_ml => ByRow(x -> parse_encoding(x)) => :encoded_activities_ml)
+transform!(encoded_activities, :encoded_activities_pt => ByRow(x -> parse_encoding(x)) => :encoded_activities_pt)
+transform!(encoded_activities, :activity_phrases => ByRow(x -> parse_phrases(x)) => :activity_phrases)
+
+encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
+
+transform!(encoded_speech_acts, :encoded_speech_acts_ml => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_ml)
+transform!(encoded_speech_acts, :encoded_speech_acts_pt => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_pt)
+transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
+
+politician_names = @pipe encoded_activities[:, :name] |>
+                Set .|>
+                String |>
+                collect |>
+                sample_names(_, 100)
+
+result_ml = get_performance_metrics(politician_names, (:encoded_speech_acts_ml, :encoded_activities_ml), encoded_speech_acts, encoded_activities)
+
+result_pt = get_performance_metrics(politician_names, (:encoded_speech_acts_pt, :encoded_activities_pt), encoded_speech_acts, encoded_activities)
