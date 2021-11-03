@@ -49,15 +49,11 @@ function compute_nearest_neighbours(comparison_point::Vector{Float32}, data::Vec
     data_matrix = hcat(data...)
 
     # Instantiating the splitting tree
-    balltree = BallTree(data_matrix, Minkowski(3); reorder = false)
+    balltree = BallTree(data_matrix, Euclidean(); reorder = false)
 
     # Computing indices and distances
     # Catching the case when there are more requested neighbors than data points
-    if size(data_matrix)[2] >= num_neighbors
-        idxs, dists = knn(balltree, comparison_point, Int(floor(size(data_matrix)[2]/2)), true)
-    else
-        idxs, dists = knn(balltree, comparison_point, num_neighbors, true)
-    end
+    idxs, dists = knn(balltree, comparison_point, min(num_neighbors, size(data_matrix)[2]), true)
 
     idxs, dists
 end
@@ -100,11 +96,11 @@ end
 sample_names(names::Vector{String}, number_of_names::Int64) = sample(names, number_of_names)
 
 @doc """
-    validate_data_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+    validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
 
 Returns names that are in both `encoded_speech_acts` and `encoded_activities`.
 """
-function validate_data_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+function validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
     speech_act_names = encoded_speech_acts[:, :actor_name]
     activity_names = encoded_activities[:, :name]
 
@@ -154,11 +150,11 @@ end
 
 
 @doc """
-    get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float32, Float32}
+    get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Float32
 
 Iterative version of `validate_search`. Iterates over `names` and generates aggregate performance statistics.
 """
-function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Tuple{Float32, Float32}
+function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Float32
 
     stats = Tuple{Float32, Float32}[]
 
@@ -170,11 +166,11 @@ function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Sy
         next!(p)
     end
 
-    mean(getindex.(stats, 1)), mean(getindex.(stats, 2))
+     average_keyword_matches = mean(getindex.(stats, 1))
+     average_distance = mean(getindex.(stats, 2))
+
+     mean([average_keyword_matches, -(average_distance)], weights([1/3, 2/3]))
 end
-
-
-validate_data_integrity(encoded_speech_acts, encoded_activities)
 
 encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
 
@@ -188,7 +184,7 @@ transform!(encoded_speech_acts, :encoded_speech_acts_ml => ByRow(x -> parse_enco
 transform!(encoded_speech_acts, :encoded_speech_acts_pt => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_pt)
 transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
 
-politician_names = @pipe validate_data_integrity(encoded_speech_acts, encoded_activities) |>
+politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_activities) |>
                 Set .|>
                 String |>
                 collect |>
