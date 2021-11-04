@@ -142,6 +142,9 @@ if __name__ == '__main__':
     # Multilingual Sentence Transformer (ML_MODEL)
     ml_model = SentenceTransformer("distiluse-base-multilingual-cased-v1")
 
+    # Neural Mind Transformer (NM_MODEL)
+    nm_model = SentenceTransformer("neuralmind/bert-base-portuguese-cased")
+
     # Encoding activities using PT_MODEL
 
     logger.info("Encoding activities…")
@@ -165,6 +168,19 @@ if __name__ == '__main__':
     for sent in texts:
         embedding = ml_model.encode(sent)
         activities_encoded_ml.append(embedding)
+        pbar.update(1)
+
+    pbar.close()
+
+
+    # Encoding activities using NM_MODEL
+    pbar = tqdm(total=len(texts))
+
+    activities_encoded_nm = []
+
+    for sent in texts:
+        embedding = nm_model.encode(sent)
+        activities_encoded_nm.append(embedding)
         pbar.update(1)
 
     pbar.close()
@@ -197,6 +213,19 @@ if __name__ == '__main__':
 
     pbar.close()
 
+
+    # Encoding speech acts using NM_MODEL
+    pbar = tqdm(total=len(speech_acts_ls))
+
+    speech_acts_encoded_nm = []
+
+    for speech_act in speech_acts_ls:
+        embedding = nm_model.encode(speech_act)
+        speech_acts_encoded_nm.append(embedding)
+        pbar.update(1)
+
+    pbar.close()
+
     #*******************CREATING DATAFRAMES FOR EXPORT ******************** 
 
     logger.info("Preparing encoded DataFrames for export…")
@@ -206,6 +235,9 @@ if __name__ == '__main__':
 
     unique_activities.loc[:, "encoded_activities_pt"] = activities_encoded_pt
     speech_acts.loc[:, "encoded_speech_acts_pt"] = speech_acts_encoded_pt
+
+    unique_activities.loc[:, "encoded_activities_nm"] = activities_encoded_nm
+    speech_acts.loc[:, "encoded_speech_acts_nm"] = speech_acts_encoded_nm
 
     unique_activities.loc[:, "activity_phrases"] = collocated_phrases_activities
     speech_acts.loc[:, "speech_act_phrases"] = collocated_phrases_speech_acts

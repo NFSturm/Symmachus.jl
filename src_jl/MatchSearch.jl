@@ -179,12 +179,16 @@ encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_enco
 
 transform!(encoded_activities, :encoded_activities_ml => ByRow(x -> parse_encoding(x)) => :encoded_activities_ml)
 transform!(encoded_activities, :encoded_activities_pt => ByRow(x -> parse_encoding(x)) => :encoded_activities_pt)
+transform!(encoded_activities, :encoded_activities_nm => ByRow(x -> parse_encoding(x)) => :encoded_activities_nm)
+
 transform!(encoded_activities, :activity_phrases => ByRow(x -> parse_phrases(x)) => :activity_phrases)
 
 encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
 
 transform!(encoded_speech_acts, :encoded_speech_acts_ml => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_ml)
 transform!(encoded_speech_acts, :encoded_speech_acts_pt => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_pt)
+transform!(encoded_speech_acts, :encoded_speech_acts_nm => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_nm)
+
 transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
 
 politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_activities) |>
@@ -196,3 +200,5 @@ politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_ac
 result_ml = get_performance_metrics(politician_names, (:encoded_speech_acts_ml, :encoded_activities_ml), encoded_speech_acts, encoded_activities)
 
 result_pt = get_performance_metrics(politician_names, (:encoded_speech_acts_pt, :encoded_activities_pt), encoded_speech_acts, encoded_activities)
+
+result_pt = get_performance_metrics(politician_names, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities)
