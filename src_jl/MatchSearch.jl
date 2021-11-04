@@ -1,5 +1,6 @@
 using DataFrames
 using DataFramesMeta
+using Distances
 using CSV
 using Chain
 using NearestNeighbors
@@ -55,7 +56,9 @@ function compute_nearest_neighbours(comparison_point::Vector{Float32}, data::Vec
     # Catching the case when there are more requested neighbors than data points
     idxs, dists = knn(balltree, comparison_point, min(num_neighbors, size(data_matrix)[2]), true)
 
-    idxs, dists
+    sims = 1 .- cosine_dist.(Ref(comparison_point), data[idxs])
+
+    idxs, sims
 end
 
 
@@ -70,7 +73,7 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
     # Instantiating summary stats dataframe
     statistics = DataFrame(
         sim_searches = Vector{Int64}[],
-        average_dist = Float32[]
+        average_sim = Float32[]
     )
 
     # Subsetting speech act data
@@ -86,8 +89,8 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
     activity_data_dense = activity_subset[:, encoding_model[2]] |> collect
 
     for row in eachrow(speaker_subset)
-        sim_indices, sim_dists = compute_nearest_neighbours(row[encoding_model[1]], activity_data_dense, 10)
-        push!(statistics, [sim_indices, mean(sim_dists)])
+        sim_indices, sims = compute_nearest_neighbours(row[encoding_model[1]], activity_data_dense, 10)
+        push!(statistics, [sim_indices, mean(sims)])
     end
 
     statistics
@@ -143,7 +146,7 @@ function validate_search(name::String, encoding_model::Tuple{Symbol, Symbol}, en
                             length.(_) |>
                             mean
 
-    aggregate_distance = statistics[:, :average_dist] |> mean
+    aggregate_distance = statistics[:, :average_sim] |> mean
 
     average_keyword_matches, aggregate_distance
 end
@@ -167,9 +170,9 @@ function get_performance_metrics(names::Vector{String}, encoding_model::Tuple{Sy
     end
 
      average_keyword_matches = mean(getindex.(stats, 1))
-     average_distance = mean(getindex.(stats, 2))
+     average_similarity = mean(getindex.(stats, 2))
 
-     mean([average_keyword_matches, -(average_distance)], weights([1/3, 2/3]))
+     average_keyword_matches, average_similarity, mean([average_keyword_matches, average_similarity], weights([1/3, 2/3]))
 end
 
 encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
