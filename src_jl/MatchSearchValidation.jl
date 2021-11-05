@@ -10,10 +10,10 @@ using ProgressMeter
 using Revise
 
 include("EncodingUtils.jl")
-.using EncodingUtils
+using .EncodingUtils
 
 include("kNN.jl")
-.using kNN
+using .kNN
 
 @doc """
    similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::DataFrame
