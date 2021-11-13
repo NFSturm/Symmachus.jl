@@ -28,3 +28,77 @@ compute_inner_alignment(speech_act_vector_space::Vector{Float32}, activity_vecto
 function compute_external_alignment(external_vector_space::Vector{Float32}, speech_act_vector_space::Vector{Float32}, activity_vector_space::Vector{Float32})
     1 .- cosine_dist.(Ref(external_vector_space), [speech_act_vector_space, activity_vector_space])
 end
+
+@doc """
+    validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+
+Returns names that are in both `encoded_speech_acts` and `encoded_activities`.
+"""
+function validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+    speech_act_names = encoded_speech_acts[:, :actor_name]
+    activity_names = encoded_activities[:, :name]
+
+    intersect(speech_act_names, activity_names)
+end
+
+
+@doc """
+    evaluate_topic_search(name::String, encoding_model::Tuple{Symbol, Symbol}, topic_vector::Vector{Float32}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
+
+Given a `name` and a `topic_vector`, alignment metrics are computed.
+"""
+function evaluate_topic_search(name::String, encoding_model::Tuple{Symbol, Symbol}, topic_vector::Vector{Float32}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
+
+    # Subsetting speech act data
+    speaker_subset = @subset encoded_speech_acts begin
+        :actor_name .== name
+    end
+
+    # Subsetting deputy activities
+    activity_subset = @subset encoded_activities begin
+        :name .== name
+    end
+
+    activity_data_dense = activity_subset[:, encoding_model[2]] |> collect
+
+    speech_act_data_dense = speaker_subset[:, encoding_model[1]] |> collect
+
+    nearest_activities, _ = compute_nearest_neighbours(topic_vector, activity_data_dense, 10)
+    nearest_speech_acts, _  = compute_nearest_neighbours(topic_vector, speech_act_data_dense, 10)
+
+    average_activity_vec_space = mean(activity_subset[nearest_activities, encoding_model[2]])
+    average_speech_act_vec_space = mean(speaker_subset[nearest_speech_acts, encoding_model[1]])
+
+    inner_alignment = compute_inner_alignment(average_speech_act_vec_space, average_activity_vec_space)
+
+    external_alignment_speech_acts, external_alignment_activities = compute_external_alignment(
+                                                    topic_vector,
+                                                    average_speech_act_vec_space,
+                                                    average_activity_vec_space)
+
+    alignment_scores = Dict(
+        :inner_alignment => inner_alignment,
+        :external_alignment_speech_acts => external_alignment_speech_acts,
+        :external_alignment_activities => external_alignment_activities,
+        :mean_external_alignment => mean([external_alignment_speech_acts, external_alignment_activities])
+    )
+
+    most_aligned_activities = activity_subset[nearest_activities, :text]
+    most_aligned_speech_acts = speaker_subset[nearest_speech_acts, :sentence_text]
+    most_aligned_activities, most_aligned_speech_acts, alignment_scores
+end
+
+unpack_numpy_array(path::String) = @pipe values(npzread(path)) |> collect |> getindex(_, 1)
+
+topic_vector_paths = readdir(joinpath("./src_py/pt_arrays"), join=true)
+
+topic_vectors = unpack_numpy_array.(topic_vector_paths)
+
+encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
+transform!(encoded_activities, :encoded_activities_pt => ByRow(x -> parse_encoding(x)) => :encoded_activities_pt)
+transform!(encoded_activities, :name => ByRow(x -> lowercase(x)) => :name)
+
+encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
+transform!(encoded_speech_acts, :encoded_speech_acts_pt => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_pt)
+transform!(encoded_speech_acts, :actor_name => ByRow(x -> lowercase(x)) => :actor_name)
+
