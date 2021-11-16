@@ -2,6 +2,7 @@ using CSV
 using DataFrames
 using DataFramesMeta
 using StatsBase
+using Pipe
 using Distances
 using NPZ
 
@@ -77,6 +78,7 @@ function evaluate_topic_search(name::String, encoding_model::Tuple{Symbol, Symbo
                                                     average_activity_vec_space)
 
     alignment_scores = Dict(
+        :name => name,
         :inner_alignment => inner_alignment,
         :external_alignment_speech_acts => external_alignment_speech_acts,
         :external_alignment_activities => external_alignment_activities,
@@ -85,14 +87,52 @@ function evaluate_topic_search(name::String, encoding_model::Tuple{Symbol, Symbo
 
     most_aligned_activities = activity_subset[nearest_activities, :text]
     most_aligned_speech_acts = speaker_subset[nearest_speech_acts, :sentence_text]
+
     most_aligned_activities, most_aligned_speech_acts, alignment_scores
+end
+
+@doc """
+    evaluate_topics_by_name(name::String, encoding_model::Tuple{Symbol, Symbol}, topic_vectors::Vector{Vector{Float32}}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
+
+Evaluates a search model by name on several `topic_vectors`.
+"""
+function evaluate_topics_by_name(name::String, encoding_model::Tuple{Symbol, Symbol}, topic_vectors::Vector{Vector{Float32}}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
+
+    name_topic_metrics = []
+
+    for topic_vector in topic_vectors
+        push!(name_topic_metrics, evaluate_topic_search(name, encoding_model, topic_vector, encoded_speech_acts, encoded_activities))
+    end
+
+    name_topic_metrics
+end
+
+@doc """
+    evaluate_all_names(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, topic_vectors::Vector{Vector{Float32}}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
+
+Wrapper around *evaluate_search_by_topic*. Takes a vector `topic_vectors` to be evaluated.
+"""
+function evaluate_all_names(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, topic_vectors::Vector{Vector{Float32}}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
+
+    name_results = []
+
+    for name in names
+        push!(name_results, evaluate_topics_by_name(name, encoding_model, topic_vectors, encoded_speech_acts, encoded_activities))
+    end
+
+    name_results
+
 end
 
 unpack_numpy_array(path::String) = @pipe values(npzread(path)) |> collect |> getindex(_, 1)
 
 topic_vector_paths = readdir(joinpath("./src_py/pt_arrays"), join=true)
 
-topic_vectors = unpack_numpy_array.(topic_vector_paths)
+orderings = @pipe split.(topic_vector_paths, "sdg") .|> split(last(_), ".") .|> first .|> parse(Int, _)
+
+ordered_paths = @pipe zip(topic_vector_paths, orderings) |> collect |> sort(_, by= x -> x[2]) |> getindex.(_, 1)
+
+topic_vectors = unpack_numpy_array.(ordered_paths)
 
 encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
 transform!(encoded_activities, :encoded_activities_pt => ByRow(x -> parse_encoding(x)) => :encoded_activities_pt)
@@ -102,3 +142,19 @@ encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_en
 transform!(encoded_speech_acts, :encoded_speech_acts_pt => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_pt)
 transform!(encoded_speech_acts, :actor_name => ByRow(x -> lowercase(x)) => :actor_name)
 
+politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_activities) |>
+                Set .|>
+                String |>
+                collect
+
+tst = evaluate_all_names(politician_names[3:5], (:encoded_speech_acts_pt, :encoded_activities_pt), topic_vectors, encoded_activities, encoded_speech_acts)
+
+name_results = getindex(tst, 3)
+
+
+
+@pipe getindex(tst, 1) |>
+    getindex(_, 1) |>
+    last(_)
+
+name_results[1][1] |> collect
