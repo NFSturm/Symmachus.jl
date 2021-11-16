@@ -12,6 +12,7 @@ using StatsBase
 using Pipe
 using Transducers
 using Revise
+using Serialization
 
 include("EncodingUtils.jl")
 using .EncodingUtils
@@ -97,7 +98,14 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
         return nothing
     end
 
-    rename!(search_results_df, Symbol.(columns))
+    if ncol(search_results_df) == length(columns)
+        rename!(search_results_df, Symbol.(columns))
+    else
+        number_of_columns = ncol(search_results_df)
+        column_subset = columns[1:number_of_columns]
+        rename!(search_results_df, Symbol.(column_subset))
+    end
+
 
     relevances = mean.(eachcol(search_results_df[:, Cols(r"relevance")]))
 
@@ -113,3 +121,55 @@ function similarity_search(name::String, encoding_model::Tuple{Symbol, Symbol}, 
 
     search_results_df, search_meta_data
 end
+
+@doc """
+    iterate_similarity_search(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame, num_results::Int64)
+
+Iterates of `names` and performs the similarity search.
+"""
+function iterate_similarity_search(names::Vector{String}, encoding_model::Tuple{Symbol, Symbol}, encoded_speech_acts::DataFrame, encoded_activities::DataFrame, num_results::Int64)
+
+    result_container = []
+
+    for name in names
+        res = similarity_search(name, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities, 3)
+        push!(result_container, res)
+    end
+
+    result_container
+end
+
+@doc """
+    validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+
+Returns names that are in both `encoded_speech_acts` and `encoded_activities`.
+"""
+function validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
+    speech_act_names = encoded_speech_acts[:, :actor_name]
+    activity_names = encoded_activities[:, :name]
+
+    intersect(speech_act_names, activity_names)
+end
+
+#****************** LOADING DATA ******************
+
+encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
+
+transform!(encoded_speech_acts, :encoded_speech_acts_nm => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_nm)
+transform!(encoded_speech_acts, :actor_name => ByRow(x -> lowercase(x)) => :actor_name)
+transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
+
+encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
+
+transform!(encoded_activities, :encoded_activities_nm => ByRow(x -> parse_encoding(x)) => :encoded_activities_nm)
+transform!(encoded_activities, :name => ByRow(x -> lowercase(x)) => :name)
+transform!(encoded_activities, :activity_phrases => ByRow(x -> parse_phrases(x)) => :activity_phrases)
+
+politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_activities) |>
+                Set .|>
+                String |>
+                collect
+
+all_results = iterate_similarity_search(politician_names, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities, 3)
+
+serialize("./search_cache/search_cache_names.jls", all_results)
