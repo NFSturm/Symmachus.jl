@@ -4,11 +4,12 @@ using StatsBase
 using ColorSchemes
 using Compose
 using Fontconfig
-using Gadfly
-using Cairo
+using CairoMakie
 using Serialization
 using Pipe
 using Revise
+
+CairoMakie.activate!()
 
 #********************** DEFINING STRUCTS FOR DESERIALIZATION ******************
 
@@ -56,36 +57,29 @@ end
 
 performance_dataframe = create_performance_dataframe(model_history)
 
-performance_plot = plot(performance_dataframe,
-    x=:epoch,
-    y=:f1_score,
-    Geom.point,
-    Geom.line,
-    Guide.xlabel("Epoch No."),
-    Guide.ylabel("F1 Score on Test Set"),
-    Theme(
-        default_color=colorant"#4169e1",
-        line_width=1mm,
-        point_size=2mm,
-        minor_label_font_size=12pt,
-        major_label_font_size=15pt
-    )
-)
-performance_plot = plot(performance_dataframe,
-    x=:epoch,
-    y=:f1_score,
-    Geom.line,
-    Guide.xlabel("Epoch No."),
-    Guide.ylabel("F1 Score on Test Set"),
-    Theme(
-        default_color=colorant"#4169e1",
-        line_width=1.25mm,
-        minor_label_font_size=12pt,
-        major_label_font_size=15pt
-    )
+using CairoMakie
+CairoMakie.activate!()
+
+labelling_theme() = Theme(
+    fontsize=20, font="Crimson",
+    Axis=(xlabelsize=20, xgridstyle=:dash, ygridstyle=:dash,
+        xtickalign=1, ylabelsize=20, ytickalign=1, yticksize=10, xticksize=10,
+        xlabelpadding=-5, xlabel="Epoch No.", ylabel="F1 Score on Test Set"),
+    Legend=(framecolor=(:black, 0.5), bgcolor=(:white, 0.5))
 )
 
-draw(PNG("./plots/labelling_performance.png", 10inch, 6inch), performance_plot)
+performance_plot() = scatterlines(
+    performance_dataframe[:, :epoch],
+    performance_dataframe[:, :f1_score];
+    color="#155ff0",
+    linewidth=2,
+    markercolor="#155ff0")
+
+plot1 = with_theme(labelling_theme()) do
+    performance_plot()
+end
+
+save("./plots/labelling_performance.pdf", plot1)
 
 #********************** VISUALIZING SELF-TRAINING PARAMS ***********************
 
@@ -129,62 +123,67 @@ function create_parameter_dataframe(model_history::Vector{Dict})::DataFrame
         push!(args_dataframe, row)
     end
 
-    stack(args_dataframe,
-        [:max_discourse_context_size, :max_sentence_context_size, :self_weight],
-        variable_name=:param_name,
-        value_name=:param_value
-    )
+    #stack(args_dataframe,
+    #    [:max_discourse_context_size, :max_sentence_context_size, :self_weight],
+    #    variable_name=:param_name,
+    #    value_name=:param_value
+    #)
+
+    args_dataframe
 end
 
 symmachus_args_dataframe = create_parameter_dataframe(model_history)
 
-param_subset = @rsubset symmachus_args_dataframe begin
-    :param_name in ["max_discourse_context_size", "max_sentence_context_size"]
-end
-
-context_plot = plot(
-    param_subset,
-    x=:epoch,
-    y=:param_value,
-    color=:param_name,
-    Geom.line,
-    Guide.xlabel("Epoch No."),
-    Guide.ylabel("Parameter Value"),
-    Guide.colorkey(title="Parameter Names", labels=["Max Discourse Context", "Max Sentence Context"]),
-    Scale.color_discrete(n -> get(ColorSchemes.tol_muted, range(0,1, length=n))),
-    Theme(
-        line_width=1.25mm,
-        minor_label_font_size=12pt,
-        major_label_font_size=15pt,
-        key_title_font_size=14pt,
-        key_label_font_size=12pt
-    )
+context_theme() = Theme(
+    fontsize=20, font="Crimson",
+    Axis=(xlabelsize=20, xgridstyle=:dash, ygridstyle=:dash,
+        xtickalign=1, ylabelsize=20, ytickalign=1, ylabelpadding=2, yticksize=10, xticksize=10,
+        xlabelpadding=-5, xlabel="Epoch No.", ylabel="Parameter Value"),
+    Legend=(framecolor=(:black, 0.5), bgcolor=(:white, 0.5))
 )
 
-draw(PNG("./plots/symmachus_args.png", 10inch, 6inch), context_plot)
-
-
-param_subset_self_weight = @rsubset symmachus_args_dataframe begin
-    :param_name .== "self_weight"
+function plot_context()
+    fig, ax, _ = scatterlines(
+        symmachus_args_dataframe[:, :epoch],
+        symmachus_args_dataframe[:, :max_discourse_context_size];
+        label="Max. Discourse Context Size",
+        color="#343978",
+        linewidth=2,
+        markercolor="#343978"
+    )
+    scatterlines!(
+        symmachus_args_dataframe[:, :epoch],
+        symmachus_args_dataframe[:, :max_sentence_context_size];
+        label="Max. Sentence Context Size",
+        color="#a7b9d6",
+        linewidth=2,
+        markercolor="#a7b9d6"
+    )
+    axislegend("Parameter Values", position=:rb)
+    fig
 end
 
-self_weight_plot = plot(
-    param_subset_self_weight,
-    x=:epoch,
-    y=:param_value,
-    color=:param_name,
-    Geom.line,
-    Guide.xlabel("Epoch No."),
-    Guide.ylabel("Parameter Value"),
-    Guide.colorkey(title="Parameter Names", labels=["Self Weight"]),
-    Scale.color_discrete(n -> get(ColorSchemes.Set2_3, range(1, length=n))),
-    Theme(
-        line_width=1.25mm,
-        minor_label_font_size=12pt,
-        major_label_font_size=15pt,
-        key_title_font_size=14pt,
-        key_label_font_size=12pt
-    )
-)
+context_plot = with_theme(context_theme()) do
+    plot_context()
+end
 
-draw(PNG("./plots/symmachus_args_2.png", 10inch, 6inch), self_weight_plot)
+save("./plots/symmachus_args.pdf", context_plot)
+
+function plot_self_weight()
+    fig, ax, _ = scatterlines(
+        symmachus_args_dataframe[:, :epoch],
+        symmachus_args_dataframe[:, :self_weight];
+        label="Self-Weight",
+        color="#2f4e68",
+        linewidth=2.5,
+        markercolor="#2f4e68"
+    )
+    axislegend("Parameter Values", position=:rb)
+    fig
+end
+
+self_weight_plot = with_theme(context_theme()) do
+    plot_self_weight()
+end
+
+save("./plots/self_weight.pdf", self_weight_plot)
