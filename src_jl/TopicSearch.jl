@@ -4,6 +4,7 @@ using DataFramesMeta
 using StatsBase
 using Pipe
 using Distances
+using Serialization
 using NPZ
 
 include("EncodingUtils.jl")
@@ -29,19 +30,6 @@ compute_inner_alignment(speech_act_vector_space::Vector{Float32}, activity_vecto
 function compute_external_alignment(external_vector_space::Vector{Float32}, speech_act_vector_space::Vector{Float32}, activity_vector_space::Vector{Float32})
     1 .- cosine_dist.(Ref(external_vector_space), [speech_act_vector_space, activity_vector_space])
 end
-
-@doc """
-    validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
-
-Returns names that are in both `encoded_speech_acts` and `encoded_activities`.
-"""
-function validate_name_integrity(encoded_speech_acts::DataFrame, encoded_activities::DataFrame)::Vector{String}
-    speech_act_names = encoded_speech_acts[:, :actor_name]
-    activity_names = encoded_activities[:, :name]
-
-    intersect(speech_act_names, activity_names)
-end
-
 
 @doc """
     evaluate_topic_search(name::String, encoding_model::Tuple{Symbol, Symbol}, topic_vector::Vector{Float32}, encoded_activities::DataFrame, encoded_speech_acts::DataFrame)
@@ -147,14 +135,6 @@ politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_ac
                 String |>
                 collect
 
-tst = evaluate_all_names(politician_names[3:5], (:encoded_speech_acts_pt, :encoded_activities_pt), topic_vectors, encoded_activities, encoded_speech_acts)
+topic_results = evaluate_all_names(politician_names, (:encoded_speech_acts_pt, :encoded_activities_pt), topic_vectors, encoded_activities, encoded_speech_acts)
 
-name_results = getindex(tst, 3)
-
-
-
-@pipe getindex(tst, 1) |>
-    getindex(_, 1) |>
-    last(_)
-
-name_results[1][1] |> collect
+serialize("./search_cache/topic_search_cache.jls", topic_results)
