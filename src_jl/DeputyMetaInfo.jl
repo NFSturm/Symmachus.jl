@@ -12,7 +12,7 @@ module MetaInfo
     function append_deputy_meta_info(deputy_meta_info::DataFrame, model_info::Vector{Dict{Symbol, Any}})
         result_container = []
 
-        for search_result in relevance_info
+        for search_result in model_info
 
             name_meta_subset = filter(row -> row.deputy_name == search_result[:name], deputy_meta_info)
 
