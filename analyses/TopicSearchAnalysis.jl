@@ -1,11 +1,19 @@
+using Pkg
+
+Pkg.activate(".")
+
 using CSV
 using DataFrames
 using DataFramesMeta
 using Serialization
+using Statistics
 using Pipe
 
 include("../src_jl/DeputyMetaInfo.jl")
 using .MetaInfo
+
+include("../src_jl/TopicSearchFunctions.jl")
+using .TopicSearch
 
 topic_search_results = deserialize("./search_cache/topic_search_cache.jls")
 
@@ -33,3 +41,5 @@ function compute_topic_alignments(topic_search_results, deputy_meta_info::DataFr
 end
 
 most_aligned_political_actors = compute_topic_alignments(topic_search_results, deputy_meta_info, 17, 10)
+
+party_summary = summarize_by_party(topic_search_results, deputy_meta_info, 17)

@@ -20,7 +20,8 @@ module TopicSearch
     compute_external_alignment,
     evaluate_topic_search,
     evaluate_topics_by_name,
-    evaluate_all_names
+    evaluate_all_names,
+    summarize_by_party
 
     compute_inner_alignment(speech_act_vector_space::Vector{Float32}, activity_vector_space::Vector{Float32}) = 1 - cosine_dist(speech_act_vector_space, activity_vector_space)
 
@@ -120,6 +121,32 @@ module TopicSearch
 
         name_results
 
+    end
+
+    @doc """
+        function summarize_by_party(search_results, deputy_meta_info::DataFrame, num_topics::Int64)
+
+    Computes alignment summary statistics by party for all topics.
+    """
+    function summarize_by_party(search_results, deputy_meta_info::DataFrame, num_topics::Int64)
+
+        summary = DataFrame[]
+
+        for topic_num in 1:num_topics
+
+            relevance_info = getindex.(search_results, topic_num) .|> last
+            result_container = append_deputy_meta_info(deputy_meta_info, relevance_info)
+
+            deputy_summary = @pipe DataFrame(result_container) |>
+                                groupby(_, :party)
+
+            topic_summary = @combine deputy_summary begin
+                    :mean_alignment_per_party = mean(:mean_external_alignment)
+            end
+
+            push!(summary, topic_summary)
+        end
+        summary
     end
 
     unpack_numpy_array(path::String) = @pipe values(npzread(path)) |> collect |> getindex(_, 1)
