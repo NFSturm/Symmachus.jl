@@ -8,6 +8,9 @@ module TopicSearch
     using Distances
     using NPZ
 
+    include("./DeputyMetaInfo.jl")
+    using .MetaInfo
+
     include("EncodingUtils.jl")
     using .EncodingUtils
 
@@ -100,7 +103,7 @@ module TopicSearch
         name_topic_metrics = []
 
         for topic_vector in topic_vectors
-            push!(name_topic_metrics, evaluate_topic_search(name, encoding_model, topic_vector, encoded_speech_acts, encoded_activities))
+            push!(name_topic_metrics, evaluate_topic_search(name, encoding_model, topic_vector, encoded_activities, encoded_speech_acts))
         end
 
         name_topic_metrics
@@ -116,7 +119,7 @@ module TopicSearch
         name_results = []
 
         for name in names
-            push!(name_results, evaluate_topics_by_name(name, encoding_model, topic_vectors, encoded_speech_acts, encoded_activities))
+            push!(name_results, evaluate_topics_by_name(name, encoding_model, topic_vectors, encoded_activities, encoded_speech_acts))
         end
 
         name_results
