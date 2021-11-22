@@ -43,3 +43,5 @@ end
 most_aligned_political_actors = compute_topic_alignments(topic_search_results, deputy_meta_info, 17, 10)
 
 party_summary = summarize_by_party(topic_search_results, deputy_meta_info, 17)
+
+serialize("./search_cache/party_summary_cache.jls", party_summary)

@@ -147,6 +147,8 @@ module TopicSearch
                     :mean_alignment_per_party = mean(:mean_external_alignment)
             end
 
+            insertcols!(topic_summary, :topic_num => topic_num)
+
             push!(summary, topic_summary)
         end
         summary
