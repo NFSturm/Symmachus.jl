@@ -1,7 +1,6 @@
 using DataFrames
 using DataFramesMeta
 using StatsBase
-using ColorSchemes
 using Compose
 using Fontconfig
 using CairoMakie
