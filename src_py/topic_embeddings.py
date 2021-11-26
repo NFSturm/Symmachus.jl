@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from numpy import savez_compressed
 from sentence_transformers import SentenceTransformer
@@ -13,7 +14,9 @@ if __name__ == '__main__':
     # Neural Mind Transformer (NM_MODEL)
     nm_model = SentenceTransformer("neuralmind/bert-base-portuguese-cased")
 
-    sdg_text_files = list(Path("./data/sdg_text").iterdir())
+    sdg_text_files = [str(path) for path in list(Path("./data/sdg_text").iterdir())]
+
+    sdg_text_files.sort(key= lambda x: int(re.findall(r"\d+", x)[0]))
 
     model_encodings = []
 
@@ -40,6 +43,3 @@ if __name__ == '__main__':
 
     for count, encodings in enumerate(model_encodings[2]):
         savez_compressed(f"./src_py/nm_arrays/sdg{count + 1}.npz", encodings)
-
-
-

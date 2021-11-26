@@ -19,3 +19,4 @@ docs/site/
 
 # Ignore data directory
 data/*
+embedding_arrays/*
