@@ -42,6 +42,14 @@ end
 
 most_aligned_political_actors = compute_topic_alignments(topic_search_results, deputy_meta_info, 17, 10)
 
-party_summary = summarize_by_party(topic_search_results, deputy_meta_info, 17)
+party_summary = @pipe summarize_by_party(topic_search_results, deputy_meta_info, 17) |>
+                    vcat(_...) |>
+                    groupby(_, :party) |>
+                    @combine _ begin
+                        $AsTable = (mean_alignment_per_party = mean(:mean_alignment_per_party),
+                        mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party),
+                        mean_activity_alignment_party = mean(:mean_activity_alignment_party))
+                    end
+
 
 serialize("./search_cache/party_summary_cache.jls", party_summary)

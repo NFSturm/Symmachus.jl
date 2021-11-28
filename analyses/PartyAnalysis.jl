@@ -53,17 +53,11 @@ timeseries_theme = generate_timeseries_theme(("Year", "Alignment Score"))
 
 reduced_yearly_series = vcat(yearly_series...)
 
-alignment_series = @pipe filter(row -> row.party == "psd", reduced_yearly_series) |>
-    @select(_, :year, :sdgs_year_summary) |>
-    Matrix |>
-    transpose
-
 parties = @pipe reduced_yearly_series[:, :party] |>
-            Set |> 
+            Set |>
             collect |>
             Filter(x -> x ∉ ["chega", "il", "independente"]) |>
             collect
-
 
 function make_coordinates(yearly_series::DataFrame, party::String)
     party_subset = filter(row -> row.party == party, yearly_series)
@@ -82,7 +76,6 @@ p1 = with_theme(timeseries_theme) do
     ax.xticks = 2009:2021
     series!(plot_data[1:4]; labels=uppercase.(parties[1:4]), linewidth=5, markersize=8, color=party_color_scheme)
     vlines!(ax, [2009, 2011, 2015, 2019]; linewidth=2, color="#989c9c")
-    #text!("lol", position=(2009, 0.5))
     axislegend("Party Name", position=:rb)
     fig
 end
