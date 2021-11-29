@@ -81,7 +81,7 @@ if __name__ == '__main__':
     logger.info("Removing stopwords for activities and speech acts.")
 
     # Dropping duplicate activities
-    unique_activities = activities.drop_duplicates(subset=["time", "name", "key"])
+    unique_activities = activities.drop_duplicates(subset=["time", "name", "key", "text"])
 
     # Preparing texts for lemmatization
     activity_text_without_stopwords = [remove_stopwords(text, stopwords) for text in unique_activities.loc[:, "text"]]
