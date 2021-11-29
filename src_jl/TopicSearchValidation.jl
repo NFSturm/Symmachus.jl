@@ -7,6 +7,7 @@ using DataFrames
 using Pipe
 using DataFramesMeta
 using StatsBase
+using Serialization
 using Distances
 using Revise
 using NPZ
@@ -166,3 +167,11 @@ topic_result_ml = evaluate_all_topics(politician_names, (:encoded_speech_acts_ml
 topic_result_pt = evaluate_all_topics(politician_names, (:encoded_speech_acts_pt, :encoded_activities_pt), topic_vectors_unpacked[2], encoded_activities, encoded_speech_acts)
 
 topic_result_nm = evaluate_all_topics(politician_names, (:encoded_speech_acts_nm, :encoded_activities_nm), topic_vectors_unpacked[3], encoded_activities, encoded_speech_acts)
+
+serialize("./search_cache/topic_validation_results.jls",
+    Dict(
+        :topic_result_ml => topic_result_ml,
+        :topic_result_pt => topic_result_pt,
+        :topic_result_nm => topic_result_nm
+        )
+    )
