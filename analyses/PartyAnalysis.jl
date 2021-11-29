@@ -20,9 +20,11 @@ function summarize_yearly_alignment(search_results::Vector{DataFrame})::Vector{D
     map(topics_over_time_results) do df
         @chain df begin
             groupby(_, :party)
-            @combine _ begin
-                :sdgs_year_summary = mean(:mean_alignment_per_party)
-                :year
+            @combine _ begin # Carrying over variable names
+                $AsTable = (mean_external_alignment = mean(:mean_external_alignment),
+                mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party),
+                mean_activity_alignment_party = mean(:mean_activity_alignment_party),
+                :year)
             end
             unique(_, :party)
         end
@@ -31,11 +33,23 @@ end
 
 yearly_series = summarize_yearly_alignment(topics_over_time_results)
 
-global_alignment = @chain summarize_yearly_alignment(topics_over_time_results) begin
-    vcat(_...)
-    groupby(_, :party)
-    @combine _ begin
-        :mean_sdgs_alignment = mean(:sdgs_year_summary)
+@doc """
+    compute_global_alignment(topics_over_time_results::Vector{DataFrame})
+
+Computes three alignment scores over `topics_over_time_results`: \n
+1. Mean External Alignment: The average of the next two metrics
+2. Mean Speech Act Alignment: The mean alignment with the topic vectors over time for speech acts
+3. Mean Activity Alignment: The mean alignment with the topic vectors over time for activities
+"""
+function compute_global_alignment(topics_over_time_results::Vector{DataFrame})
+    global_alignment = @chain summarize_yearly_alignment(topics_over_time_results) begin
+        vcat(_...)
+        groupby(_, :party)
+        @combine _ begin
+            $AsTable = (global_mean_external_alignment = mean(:mean_external_alignment),
+            global_mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party),
+            global_mean_activity_alignment_party = mean(:mean_activity_alignment_party))
+        end
     end
 end
 
