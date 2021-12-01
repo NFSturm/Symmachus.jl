@@ -131,9 +131,13 @@ function iterate_similarity_search(names::Vector{String}, encoding_model::Tuple{
 
     result_container = []
 
+    n = length(names)
+    p = Progress(n, 1)
+
     for name in names
-        res = similarity_search(name, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities, 3)
+        res = similarity_search(name, encoding_model, encoded_speech_acts, encoded_activities, 3)
         push!(result_container, res)
+        next!(p)
     end
 
     result_container
