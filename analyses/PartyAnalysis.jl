@@ -8,6 +8,7 @@ using Chain
 using CairoMakie
 using ColorSchemes
 using Transducers
+using Revise
 
 topics_over_time_results = deserialize("./search_cache/all_year_topic_search.jls")
 
@@ -21,10 +22,10 @@ function summarize_yearly_alignment(search_results::Vector{DataFrame})::Vector{D
         @chain df begin
             groupby(_, :party)
             @combine _ begin # Carrying over variable names
-                $AsTable = (mean_external_alignment = mean(:mean_external_alignment),
-                mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party),
-                mean_activity_alignment_party = mean(:mean_activity_alignment_party),
-                :year)
+                :mean_external_alignment = mean(:mean_alignment_per_party)
+                :mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party)
+                :mean_activity_alignment_party = mean(:mean_activity_alignment_party)
+                :year
             end
             unique(_, :party)
         end
@@ -46,9 +47,9 @@ function compute_global_alignment(topics_over_time_results::Vector{DataFrame})
         vcat(_...)
         groupby(_, :party)
         @combine _ begin
-            $AsTable = (global_mean_external_alignment = mean(:mean_external_alignment),
-            global_mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party),
-            global_mean_activity_alignment_party = mean(:mean_activity_alignment_party))
+            :global_mean_external_alignment = mean(:mean_external_alignment)
+            :global_mean_speech_act_alignment_party = mean(:mean_speech_act_alignment_party)
+            :global_mean_activity_alignment_party = mean(:mean_activity_alignment_party)
         end
     end
 end
@@ -63,6 +64,8 @@ function generate_timeseries_theme(axis_labels::Tuple{String, String})
     )
 end
 
+global_alignment = compute_global_alignment(topics_over_time_results)
+
 timeseries_theme = generate_timeseries_theme(("Year", "Alignment Score"))
 
 reduced_yearly_series = vcat(yearly_series...)
@@ -75,7 +78,7 @@ parties = @pipe reduced_yearly_series[:, :party] |>
 
 function make_coordinates(yearly_series::DataFrame, party::String)
     party_subset = filter(row -> row.party == party, yearly_series)
-    party_scores = @select(party_subset, :sdgs_year_summary) |> Matrix |> vec
+    party_scores = @select(party_subset, :mean_external_alignment) |> Matrix |> vec
     years = @select(party_subset, :year) |> Matrix |> vec .|> Int
     Point2f.(years, party_scores)
 end

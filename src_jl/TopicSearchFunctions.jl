@@ -144,9 +144,9 @@ module TopicSearch
                                 groupby(_, :party)
 
             topic_summary = @combine deputy_summary begin
-                    $AsTable = (mean_external_alignment = mean(:mean_external_alignment),
-                    mean_speech_act_alignment_party = mean(:external_alignment_speech_acts),
-                    mean_activity_alignment_party = mean(:external_alignment_activities))
+                    :mean_alignment_per_party = mean(:mean_external_alignment)
+                    :mean_speech_act_alignment_party = mean(:external_alignment_speech_acts)
+                    :mean_activity_alignment_party = mean(:external_alignment_activities)
             end
 
             insertcols!(topic_summary, :topic_num => topic_num)
