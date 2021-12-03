@@ -13,6 +13,7 @@ using Pipe
 using Transducers
 using Revise
 using Serialization
+using ProgressMeter
 
 include("EncodingUtils.jl")
 using .EncodingUtils
@@ -157,22 +158,21 @@ end
 
 #****************** LOADING DATA ******************
 
+@info "Loading speech acts…"
+
 encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
 
 transform!(encoded_speech_acts, :encoded_speech_acts_nm => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_nm)
 transform!(encoded_speech_acts, :actor_name => ByRow(x -> lowercase(x)) => :actor_name)
-transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
+
+@info "Loading activities…"
 
 encoded_activities = DataFrame(CSV.File("./data/encoded_datasets/activities_encoded.csv"))
 
 transform!(encoded_activities, :encoded_activities_nm => ByRow(x -> parse_encoding(x)) => :encoded_activities_nm)
 transform!(encoded_activities, :name => ByRow(x -> lowercase(x)) => :name)
-transform!(encoded_activities, :activity_phrases => ByRow(x -> parse_phrases(x)) => :activity_phrases)
 
-politician_names = @pipe validate_name_integrity(encoded_speech_acts, encoded_activities) |>
-                Set .|>
-                String |>
-                collect
+politician_names = readdir("./name_chunks", join=true)[1] |> readlines
 
 all_results = iterate_similarity_search(politician_names, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities, 3)
 
