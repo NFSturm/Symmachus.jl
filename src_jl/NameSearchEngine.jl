@@ -176,4 +176,4 @@ politician_names = readdir("./name_chunks", join=true)[1] |> readlines
 
 all_results = iterate_similarity_search(politician_names, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities, 3)
 
-serialize("./search_cache/search_cache_names.jls", all_results)
+serialize("./search_cache/search_cache_names1.jls", all_results)
