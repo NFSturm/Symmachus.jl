@@ -9,7 +9,7 @@
 
 📄 Symmachus implements the functionalities a semantic search engine for Portuguese politics. 
 
-💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary speeches and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives). The ETL process was implemented in Python and is stored in another repository at the Data Science Knowledge Center.
+💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary speeches and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives).
 
 ⌨️ There are three main components in this repository:
 
