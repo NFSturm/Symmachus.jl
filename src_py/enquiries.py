@@ -164,7 +164,7 @@ def extract_deputy_information(xml_dict: OrderedDict):
     keys_deputy = list(deputy_activity.keys())
 
     extract_keys = [key for key in keys_deputy if key in possible_keys]
-    
+
     def extract_key_data(deputy_activity: OrderedDict, key: str):
         """
         Parameters:
@@ -399,7 +399,7 @@ with Flow('enquiries-flow') as Flow:
   # Saving to disk
   export_dataframe(shaped_dataframe, today_string, data_dir)
 
-Flow.run_config = LocalRun(working_dir='/home/nfsturm/Dev/policy-monitoring-backend')
+Flow.run_config = LocalRun(working_dir='/home/nfsturm/Dev/Symmachus.jl')
 Flow.executor = DaskExecutor()
 Flow.register(project_name="sdg-etl")
   

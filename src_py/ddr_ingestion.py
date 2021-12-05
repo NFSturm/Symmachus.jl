@@ -509,6 +509,6 @@ with Flow('ddr-ingestion') as Flow:
     # Saving to disk
     export_dataframe(reduced_dataframe, today_string, data_dir)
 
-Flow.run_config = LocalRun(working_dir='/home/nfsturm/Dev/policy-monitoring-backend')
+Flow.run_config = LocalRun(working_dir='/home/nfsturm/Dev/Symmachus.jl')
 Flow.executor = DaskExecutor()
 Flow.register(project_name="sdg-etl")
