@@ -479,7 +479,6 @@ with Flow('ddr-ingestion') as Flow:
     # Defining paths
     configs = load_config()
 
-    reference_path = configs['CONFIG_INFO']['REFERENCE_DIR'] + '/government_positions.csv'
     state_path = configs['CONFIG_INFO']['STATE_DIR']
     data_dir = configs['CONFIG_INFO']['ACTIVITY_DATA_DIR']
 
