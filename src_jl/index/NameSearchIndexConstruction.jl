@@ -73,7 +73,8 @@ function retrieve_embeddings_for_all_results(search_results::Vector{DataFrame}, 
     all_dataframes
 end
 
-name_search_results_filtered = @pipe deserialize("./search_cache/search_cache_names.jls") |>
+name_search_results_filtered = @pipe [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6] |>
+                            Iterators.flatten |>
                             Filter(!isnothing) |>
                             attach_name.(_) |>
                             collect
