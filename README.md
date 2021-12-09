@@ -19,5 +19,4 @@
 
 3. A semantic search engine on the basis of `sentence-transformers`. Two functionalities are supported by the backend: (a) Name Search – Searching an individual politician's corpus for matching political issues mentioned in speeches with activities undertaken and (b) Topic Search – Computing topic alignment scores for politicians and political parties. This can be any topic, but for the purpose of the thesis, the case study of SDGs (Sustainable Development Goals) is chosen.
 
-
-
+**Note:** Stopwords used were accessed from this source https://members.unine.ch/jacques.savoy/clef/portugueseST2.txt, which unfortunately is currently unavailable.
