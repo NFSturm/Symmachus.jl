@@ -9,7 +9,7 @@
 
 📄 Symmachus implements the functionalities a semantic search engine for Portuguese politics. 
 
-💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary speeches and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives).
+💾 The data is derived from [Debates Parlamentares](https://debates.parlamento.pt), for plenary speeches and the [Assembleia da República](https://www.parlamento.pt/Cidadania/Paginas/DAatividadeDeputado.aspx) for deputies' activities (such as questions to the government, law proposals and other parliamentary initiatives). All data is available in a separate [Cloud Repository](https://e1.pcloud.link/publink/show?code=kZEHcJZXRP7LBAKrUQ28XziEjbeuSmlhnxX) as either CSV, Parquet or JLS (Deserializable with Julia 1.6 or 1.7).
 
 ⌨️ There are three main components in this repository:
 
