@@ -484,6 +484,12 @@ git-tree-sha1 = "e8b37bb43c01eed0418821d1f9d20eca5ba6ab21"
 uuid = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 version = "0.12.8"
 
+[[Fontconfig]]
+deps = ["Fontconfig_jll", "Libdl", "Printf"]
+git-tree-sha1 = "beef89322ccf3b80062f522ed6f82089a254491e"
+uuid = "186bb1d3-e1f7-5a2c-a377-96d770f13627"
+version = "0.4.0"
+
 [[Fontconfig_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Expat_jll", "FreeType2_jll", "JLLWrappers", "Libdl", "Libuuid_jll", "Pkg", "Zlib_jll"]
 git-tree-sha1 = "21efd19106a55620a188615da6d3d06cd7f6ee03"
@@ -1436,6 +1442,12 @@ deps = ["Setfield", "Test"]
 git-tree-sha1 = "39c9f91521de844bad65049efd4f9223e7ed43f9"
 uuid = "171d559e-b47b-412a-8079-5efa626c420e"
 version = "0.1.14"
+
+[[StableRNGs]]
+deps = ["Random", "Test"]
+git-tree-sha1 = "3be7d49667040add7ee151fefaf1f8c04c8c8276"
+uuid = "860ef19b-820b-49d6-a774-d7a799459cd3"
+version = "1.0.0"
 
 [[StackViews]]
 deps = ["OffsetArrays"]
