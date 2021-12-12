@@ -30,8 +30,9 @@ end
 
 model_history = deserialize("./cache/final_model/model_history.jls")
 
-#********************** VISUALIZING BOOSTER PERFORMANCE ************************
+epoch_performance_average = mean([epoch[:performance] for epoch in model_history])
 
+#********************** VISUALIZING BOOSTER PERFORMANCE ************************
 
 @doc """
     create_performance_dataframe(model_history::Vector{Dict})::DataFrame
