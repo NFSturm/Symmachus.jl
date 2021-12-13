@@ -15,9 +15,9 @@ using .EncodingUtils
 include("../src_jl/DeputyMetaInfo.jl")
 using .MetaInfo
 
-name_search_results = [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6]
+speech_activity_match_results = [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6]
 
-filtered_search_results = name_search_results |> Iterators.flatten |> Filter(!isnothing) |> collect
+filtered_search_results = speech_activity_match_results |> Iterators.flatten |> Filter(!isnothing) |> collect
 
 deputy_meta_info = DataFrame(CSV.File("./analyses/deputies.csv"))
 

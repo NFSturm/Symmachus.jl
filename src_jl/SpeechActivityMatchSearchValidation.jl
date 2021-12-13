@@ -173,7 +173,7 @@ result_pt = get_performance_metrics(politician_names, (:encoded_speech_acts_pt, 
 
 result_nm = get_performance_metrics(politician_names, (:encoded_speech_acts_nm, :encoded_activities_nm), encoded_speech_acts, encoded_activities)
 
-serialize("./search_cache/name_search_validation_results.jls",
+serialize("./search_cache/speech_activity_match_search_validation_results.jls",
     Dict(
         :result_ml => result_ml,
         :result_pt => result_pt,

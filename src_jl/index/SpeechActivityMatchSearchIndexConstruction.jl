@@ -12,13 +12,6 @@ using .EncodingUtils
 
 #****************** LOADING DATA ******************
 
-encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
-
-transform!(encoded_speech_acts, :encoded_speech_acts_nm => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_nm)
-transform!(encoded_speech_acts, :actor_name => ByRow(x -> lowercase(x)) => :actor_name)
-transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
-
-
 @doc """
     attach_name(search_result::Tuple{DataFrame, Dict{Symbol, Any}})
 
@@ -73,13 +66,19 @@ function retrieve_embeddings_for_all_results(search_results::Vector{DataFrame}, 
     all_dataframes
 end
 
-name_search_results_filtered = @pipe [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6] |>
+encoded_speech_acts = DataFrame(CSV.File("./data/encoded_datasets/speech_acts_encoded.csv"))
+
+transform!(encoded_speech_acts, :encoded_speech_acts_nm => ByRow(x -> parse_encoding(x)) => :encoded_speech_acts_nm)
+transform!(encoded_speech_acts, :actor_name => ByRow(x -> lowercase(x)) => :actor_name)
+transform!(encoded_speech_acts, :speech_act_phrases => ByRow(x -> parse_phrases(x)) => :speech_act_phrases)
+
+speech_activity_search_results_filtered = @pipe [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6] |>
                             Iterators.flatten |>
                             Filter(!isnothing) |>
                             attach_name.(_) |>
                             collect
 
-search_results_with_embeddings = retrieve_embeddings_for_all_results(name_search_results_filtered, encoded_speech_acts)
+search_results_with_embeddings = retrieve_embeddings_for_all_results(speech_activity_match_search_results_filtered, encoded_speech_acts)
 
 search_results_with_embeddings_concat = vcat(search_results_with_embeddings..., cols=:union)
 

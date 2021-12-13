@@ -20,9 +20,9 @@ function sample_rows(speech_act_dataframe::DataFrame, nrow_samples::Int64)::Tupl
     original_queries, most_relevant_search_result
 end
 
-name_search_results = [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6]
+speech_activity_match_search_results = [deserialize("./search_cache/search_cache_names$(i).jls") for i in 1:6]
 
-filtered_search_results = name_search_results |> Iterators.flatten |> Filter(!isnothing) |> collect
+filtered_search_results = speech_activity_match_results |> Iterators.flatten |> Filter(!isnothing) |> collect
 
 #[271, 236, 397, 305, 450]
 sampled_political_actors = sample(1:length(filtered_search_results), 5)
